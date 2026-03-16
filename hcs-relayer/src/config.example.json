@@ -1,0 +1,15 @@
+{
+  "hedera": {
+    "network": "testnet",
+    "operatorId": "0.0.123456",
+    "operatorKey": "302e...",
+    "topicId": "0.0.654321"
+  },
+  "evm": {
+    "rpcUrl": "https://your-rpc-endpoint",
+    "chainId": 296,
+    "validationRegistryAddress": "0x0000000000000000000000000000000000000000",
+    "agentRegistryAddress": "0x0000000000000000000000000000000000000000",
+    "startBlock": 0
+  }
+}

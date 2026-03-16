@@ -1,0 +1,1 @@
+../IStakingMananger.sol

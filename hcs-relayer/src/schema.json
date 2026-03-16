@@ -1,0 +1,118 @@
+{
+  "version": "v1",
+  "events": {
+    "EXECUTION_SUBMITTED": {
+      "required": [
+        "schemaVersion",
+        "type",
+        "chainId",
+        "contract",
+        "txHash",
+        "logIndex",
+        "blockNumber",
+        "executionId",
+        "agentId",
+        "reasoningHash",
+        "outputHash",
+        "executionHash",
+        "isDeterministic"
+      ]
+    },
+    "VOTE_CAST": {
+      "required": [
+        "schemaVersion",
+        "type",
+        "chainId",
+        "contract",
+        "txHash",
+        "logIndex",
+        "blockNumber",
+        "executionId",
+        "agentId",
+        "validator",
+        "action",
+        "vote",
+        "approvals",
+        "rejections",
+        "finalized"
+      ]
+    },
+    "EXECUTION_REACHED_CONSENSUS": {
+      "required": [
+        "schemaVersion",
+        "type",
+        "chainId",
+        "contract",
+        "txHash",
+        "logIndex",
+        "blockNumber",
+        "executionId",
+        "agentId",
+        "action",
+        "result",
+        "approvals",
+        "rejections",
+        "finalized"
+      ]
+    },
+    "EXECUTION_FINALIZED": {
+      "required": [
+        "schemaVersion",
+        "type",
+        "chainId",
+        "contract",
+        "txHash",
+        "logIndex",
+        "blockNumber",
+        "executionId",
+        "agentId",
+        "action",
+        "result",
+        "approvals",
+        "rejections",
+        "finalized"
+      ]
+    },
+    "VALIDATOR_REGISTERED": {
+      "required": [
+        "schemaVersion",
+        "type",
+        "chainId",
+        "contract",
+        "txHash",
+        "logIndex",
+        "blockNumber",
+        "validator",
+        "stakedAmount"
+      ]
+    },
+    "AGENT_REGISTERED": {
+      "required": [
+        "schemaVersion",
+        "type",
+        "chainId",
+        "contract",
+        "txHash",
+        "logIndex",
+        "blockNumber",
+        "agentId",
+        "owner",
+        "riskLevel",
+        "isDeterministic",
+        "metadataURI"
+      ]
+    },
+    "AGENT_REVOKED": {
+      "required": [
+        "schemaVersion",
+        "type",
+        "chainId",
+        "contract",
+        "txHash",
+        "logIndex",
+        "blockNumber",
+        "agentId"
+      ]
+    }
+  }
+}

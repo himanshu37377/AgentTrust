@@ -51,9 +51,8 @@ contract ReputationRegistry {
         _;
     }
 
-    constructor(address _validationRegistry, address _agentRegistry) {
+    constructor(address _agentRegistry) {
         owner = msg.sender;
-        validationRegistry = _validationRegistry;
         agentRegistry = _agentRegistry;
     }
 

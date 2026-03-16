@@ -12,7 +12,12 @@ contract ValidationRegistry {
     using Address for address payable;
 
     struct Execution {
+        uint256 executionId;
         uint256 agentId;
+        uint256 parentExecutionId;
+        uint256 callerAgentId;
+        bool involvesExternalCall;
+        string externalService;
         bytes32 reasoningHash;
         bytes32 outputHash;
         bytes32 executionHash;
@@ -32,6 +37,17 @@ contract ValidationRegistry {
         uint256 registeredAt;
     }
 
+    struct ExecutionInput {
+        uint256 agentId;
+        uint256 parentExecutionId;
+        uint256 callerAgentId;
+        bool involvesExternalCall;
+        string externalService;
+        bytes32 outputHash;
+        bytes32 reasoningHash;
+        bool isDeterministic;
+    }
+
     uint256 public constant BPS_BASE = 10_000;
     uint256 public approvalThresholdBps = 6_600; // 66%
     uint256 public minVotesForFinalization = 3;
@@ -45,7 +61,7 @@ contract ValidationRegistry {
 
     uint256 public executionCounter;
 
-    mapping(uint256 => Execution) public executions;
+    mapping(uint256 => Execution) private executions;
     mapping(bytes32 => uint256) public executionIdByHash;
     mapping(uint256 => mapping(address => bool)) public hasVoted;
 
@@ -54,10 +70,10 @@ contract ValidationRegistry {
     event ExecutionSubmitted(
         uint256 indexed executionId,
         uint256 indexed agentId,
-        bytes32 reasoningHash,
-        bytes32 outputHash,
-        bytes32 executionHash,
-        bool isDeterministic
+        uint256 parentExecutionId,
+        uint256 callerAgentId,
+        bool involvesExternalCall,
+        string externalService
     );
     event DeterministicExecutionVerified(uint256 indexed executionId, bool accepted);
     event VoteSubmitted(uint256 indexed executionId, address indexed validator, bool approve);
@@ -83,12 +99,8 @@ contract ValidationRegistry {
         _;
     }
 
-    constructor(address _agentRegistry, address _reputationRegistry, address /*_validatorRegistry*/ ) {
-        require(_agentRegistry != address(0), "Invalid agent registry");
-        require(_reputationRegistry != address(0), "Invalid reputation registry");
+    constructor() {
         owner = msg.sender;
-        agentRegistry = _agentRegistry;
-        reputationRegistry = _reputationRegistry;
     }
 
     function setAgentRegistry(address _agentRegistry) external onlyOwner {
@@ -169,53 +181,57 @@ contract ValidationRegistry {
         minVotesForFinalization = _minVotesForFinalization;
     }
 
-    function generateExecutionHash(uint256 agentId, bytes32 reasoningHash, bytes32 outputHash)
+    function generateExecutionHash(
+        uint256 agentId,
+        uint256 parentExecutionId,
+        uint256 callerAgentId,
+        bool involvesExternalCall,
+        string calldata externalService,
+        bytes32 reasoningHash,
+        bytes32 outputHash
+    )
         public
         pure
         returns (bytes32)
     {
-        return keccak256(abi.encode(agentId, reasoningHash, outputHash));
+        return keccak256(
+            abi.encode(
+                agentId,
+                parentExecutionId,
+                callerAgentId,
+                involvesExternalCall,
+                externalService,
+                reasoningHash,
+                outputHash
+            )
+        );
     }
 
-    function submitExecution(uint256 agentId, bytes32 reasoningHash, bytes32 outputHash)
+    function submitExecution(
+        uint256 agentId,
+        uint256 parentExecutionId,
+        uint256 callerAgentId,
+        bool involvesExternalCall,
+        string calldata externalService,
+        bytes32 outputHash,
+        bytes32 reasoningHash,
+        bool isDeterministic
+    )
         external
         returns (uint256 executionId, bytes32 executionHash)
     {
-        require(agentId > 0, "Invalid agent id");
-        require(reasoningHash != bytes32(0), "Invalid reasoning hash");
-        require(outputHash != bytes32(0), "Invalid output hash");
-
-        IAgentRegistry.Agent memory agent = IAgentRegistry(agentRegistry).getAgent(agentId);
-        require(agent.isRegistered, "Agent not registered");
-        require(!agent.revoked, "Agent revoked");
-
-        executionHash = generateExecutionHash(agentId, reasoningHash, outputHash);
-        require(executionIdByHash[executionHash] == 0, "Execution already exists");
-
-        executionId = ++executionCounter;
-        executionIdByHash[executionHash] = executionId;
-
-        executions[executionId] = Execution({
+        ExecutionInput memory input = ExecutionInput({
             agentId: agentId,
-            reasoningHash: reasoningHash,
+            parentExecutionId: parentExecutionId,
+            callerAgentId: callerAgentId,
+            involvesExternalCall: involvesExternalCall,
+            externalService: externalService,
             outputHash: outputHash,
-            executionHash: executionHash,
-            isDeterministic: IAgentRegistry(agentRegistry).isAgentDeterministic(agentId),
-            approvals: 0,
-            rejections: 0,
-            finalized: false,
-            accepted: false,
-            createdAt: block.timestamp
+            reasoningHash: reasoningHash,
+            isDeterministic: isDeterministic
         });
 
-        emit ExecutionSubmitted(
-            executionId,
-            agentId,
-            reasoningHash,
-            outputHash,
-            executionHash,
-            executions[executionId].isDeterministic
-        );
+        return _submitExecution(input);
     }
 
     function verifyDeterministicExecution(uint256 executionId, bytes32 expectedOutputHash) external {
@@ -307,6 +323,81 @@ contract ValidationRegistry {
         uint256 executionId = executionIdByHash[executionHash];
         require(executionId != 0, "Execution not found");
         return executions[executionId];
+    }
+
+    function getExecution(uint256 executionId) external view returns (Execution memory) {
+        require(executions[executionId].executionId != 0, "Execution not found");
+        return executions[executionId];
+    }
+
+    function getExecutionParent(uint256 executionId) external view returns (uint256) {
+        require(executions[executionId].executionId != 0, "Execution not found");
+        return executions[executionId].parentExecutionId;
+    }
+
+    function getExecutionCaller(uint256 executionId) external view returns (uint256) {
+        require(executions[executionId].executionId != 0, "Execution not found");
+        return executions[executionId].callerAgentId;
+    }
+
+    function _submitExecution(ExecutionInput memory input)
+        internal
+        returns (uint256 executionId, bytes32 executionHash)
+    {
+        require(input.agentId > 0, "Invalid agent id");
+        require(input.reasoningHash != bytes32(0), "Invalid reasoning hash");
+        require(input.outputHash != bytes32(0), "Invalid output hash");
+        require(agentRegistry != address(0), "Agent registry not set");
+
+        IAgentRegistry.Agent memory agent = IAgentRegistry(agentRegistry).getAgent(input.agentId);
+        require(agent.isRegistered, "Agent not registered");
+        require(!agent.revoked, "Agent revoked");
+
+        if (input.parentExecutionId != 0) {
+            require(executions[input.parentExecutionId].executionId != 0, "Parent execution not found");
+        }
+
+        if (input.callerAgentId != 0) {
+            require(IAgentRegistry(agentRegistry).getAgent(input.callerAgentId).isRegistered, "Caller agent not registered");
+        }
+
+        executionHash = keccak256(
+            abi.encode(
+                input.agentId,
+                input.parentExecutionId,
+                input.callerAgentId,
+                input.involvesExternalCall,
+                input.externalService,
+                input.reasoningHash,
+                input.outputHash
+            )
+        );
+        require(executionIdByHash[executionHash] == 0, "Execution already exists");
+
+        executionId = ++executionCounter;
+        executionIdByHash[executionHash] = executionId;
+
+        Execution storage exec = executions[executionId];
+        exec.executionId = executionId;
+        exec.agentId = input.agentId;
+        exec.parentExecutionId = input.parentExecutionId;
+        exec.callerAgentId = input.callerAgentId;
+        exec.involvesExternalCall = input.involvesExternalCall;
+        exec.externalService = input.externalService;
+        exec.reasoningHash = input.reasoningHash;
+        exec.outputHash = input.outputHash;
+        exec.executionHash = executionHash;
+        exec.isDeterministic = input.isDeterministic;
+        exec.createdAt = block.timestamp;
+
+        emit ExecutionSubmitted(
+            executionId,
+            input.agentId,
+            input.parentExecutionId,
+            input.callerAgentId,
+            input.involvesExternalCall,
+            input.externalService
+        );
     }
 
      // for testing so native tokens do not get stuck
