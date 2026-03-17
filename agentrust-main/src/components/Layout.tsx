@@ -184,9 +184,11 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       <header className="sticky top-0 z-50 border-b border-white/5 bg-background-dark/80 backdrop-blur-md">
         <div className="max-w-[1280px] mx-auto px-6 flex h-20 items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="size-10 btn-gradient rounded-lg flex items-center justify-center text-white">
-              <span className="material-symbols-outlined text-2xl">security</span>
-            </div>
+            <img
+              src="/agentrust-logo.svg"
+              alt="AgentTrust logo"
+              className="size-10 rounded-lg border border-white/10 bg-background-dark/70 p-1"
+            />
             <Link to="/" className="text-xl font-bold tracking-tight text-white">AgentTrust</Link>
           </div>
           <nav className="hidden md:flex items-center gap-8">

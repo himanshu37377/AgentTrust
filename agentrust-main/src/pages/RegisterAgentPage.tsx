@@ -1,6 +1,7 @@
 import { BrowserProvider, Contract, Interface, JsonRpcProvider, formatEther } from "ethers";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "@/components/ui/use-toast";
+import { HCS14Client } from "@hashgraphonline/standards-sdk";
 
 const AGENT_REGISTRY_ABI = [
   "function calculateStakeAmount(uint8 riskLevel) view returns (uint256)",
@@ -12,6 +13,28 @@ const AGENT_REGISTRY_ABI = [
 
 type RiskLevel = "low" | "medium" | "high";
 type ExecutionMode = "deterministic" | "non-deterministic";
+type UaidProtocol = "rest" | "hcs-10" | "a2a";
+type UaidRecipeType = "A2A" | "DID_WEB" | "EVM";
+
+type UaidPayload = {
+  registry: "hol";
+  name: string;
+  version: string;
+  protocol: string;
+  nativeId?: string;
+  skills: number[];
+};
+
+type UaidRecipeInputs = {
+  uaidName: string;
+  uaidVersion: string;
+  uaidProtocol: UaidProtocol;
+  uaidNativeId: string;
+  uaidSkillsInput: string;
+  didWebValue: string;
+  evmChainId: string;
+  evmAddress: string;
+};
 
 type EthereumProvider = {
   request: (args: { method: string; params?: unknown[] | object }) => Promise<unknown>;
@@ -101,6 +124,82 @@ function extractReadableError(error: unknown) {
 
   return rawMessage;
 }
+function parseSkillsInput(skillsInput: string) {
+  return skillsInput
+    .split(",")
+    .map((skill) => Number(skill.trim()))
+    .filter((skill) => Number.isInteger(skill) && skill >= 0);
+}
+
+function generateUid(name: string) {
+  return name.toLowerCase().trim().replace(/\s+/g, "-");
+}
+
+function buildUaidPayload(recipeType: UaidRecipeType, inputs: UaidRecipeInputs): UaidPayload {
+  const version = inputs.uaidVersion.trim() || "1.0.0";
+  const skills = parseSkillsInput(inputs.uaidSkillsInput);
+
+  switch (recipeType) {
+    case "A2A":
+      return {
+        registry: "hol",
+        name: inputs.uaidName.trim(),
+        version,
+        protocol: inputs.uaidProtocol,
+        nativeId: inputs.uaidNativeId.trim() || undefined,
+        skills,
+      };
+    case "DID_WEB": {
+      const did = inputs.didWebValue.trim();
+      return {
+        registry: "hol",
+        name: did,
+        version,
+        protocol: "did:web",
+        nativeId: did,
+        skills: [],
+      };
+    }
+    case "EVM":
+      return {
+        registry: "hol",
+        name: inputs.uaidName.trim(),
+        version,
+        protocol: "eip155",
+        nativeId: `${inputs.evmChainId.trim()}:${inputs.evmAddress.trim()}`,
+        skills,
+      };
+    default:
+      return {
+        registry: "hol",
+        name: inputs.uaidName.trim(),
+        version,
+        protocol: inputs.uaidProtocol,
+        nativeId: inputs.uaidNativeId.trim() || undefined,
+        skills,
+      };
+  }
+}
+
+function getRecipeBadge(recipeType: UaidRecipeType) {
+  switch (recipeType) {
+    case "A2A":
+      return "Deterministic Identity";
+    case "DID_WEB":
+      return "DID Wrapper";
+    case "EVM":
+      return "On-chain Identity";
+  }
+}
+
+function isValidDidWeb(value: string) {
+  return /^did:web:[a-zA-Z0-9.-]+(?::[a-zA-Z0-9._~!$&'()*+,;=:@%-]+)*$/.test(value.trim());
+}
+
+function isValidEvmAddress(value: string) {
+  return /^0x[a-fA-F0-9]{40}$/.test(value.trim());
+}
+
 
 function getMirrorNodeBaseUrl() {
   return import.meta.env.VITE_HEDERA_MIRROR_NODE_URL?.trim() || "https://testnet.mirrornode.hedera.com";
@@ -206,6 +305,18 @@ export default function RegisterAgentPage() {
   const [revokeAgentId, setRevokeAgentId] = useState("");
   const [isRevoking, setIsRevoking] = useState(false);
   const [protocolLogs, setProtocolLogs] = useState<ProtocolLog[]>([]);
+  const [uaidRecipe, setUaidRecipe] = useState<UaidRecipeType>("A2A");
+  const [uaidName, setUaidName] = useState("");
+  const [uaidVersion, setUaidVersion] = useState("1.0.0");
+  const [uaidProtocol, setUaidProtocol] = useState<UaidProtocol>("rest");
+  const [uaidNativeId, setUaidNativeId] = useState("");
+  const [uaidSkillsInput, setUaidSkillsInput] = useState("");
+  const [didWebValue, setDidWebValue] = useState("");
+  const [evmChainId, setEvmChainId] = useState("296");
+  const [evmAddress, setEvmAddress] = useState("");
+  const [generatedUaid, setGeneratedUaid] = useState("");
+  const [generatedRecipe, setGeneratedRecipe] = useState<UaidRecipeType | null>(null);
+  const [isGeneratingUaid, setIsGeneratingUaid] = useState(false);
   const [feedbackModal, setFeedbackModal] = useState<{
     title: string;
     message: string;
@@ -571,6 +682,103 @@ export default function RegisterAgentPage() {
     }
   };
 
+  const generateUaid = async () => {
+    if (uaidRecipe === "DID_WEB") {
+      if (!isValidDidWeb(didWebValue)) {
+        toast({
+          title: "Invalid did:web",
+          description: "Enter a valid DID such as did:web:example.com before generating.",
+          variant: "destructive",
+        });
+        return;
+      }
+    } else {
+      if (!uaidName.trim()) {
+        toast({
+          title: "Agent name required",
+          description: "Enter an agent name before generating a UAID.",
+          variant: "destructive",
+        });
+        return;
+      }
+    }
+
+    if (uaidRecipe === "EVM") {
+      if (!evmChainId.trim() || Number.isNaN(Number(evmChainId)) || Number(evmChainId) <= 0) {
+        toast({
+          title: "Invalid chain ID",
+          description: "Enter a valid positive EVM chain ID.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      if (!isValidEvmAddress(evmAddress)) {
+        toast({
+          title: "Invalid EVM address",
+          description: "Address must be a 0x-prefixed 40-byte hex value.",
+          variant: "destructive",
+        });
+        return;
+      }
+    }
+
+    setIsGeneratingUaid(true);
+
+    try {
+      const payloadInputs: UaidRecipeInputs = {
+        uaidName,
+        uaidVersion,
+        uaidProtocol,
+        uaidNativeId,
+        uaidSkillsInput,
+        didWebValue,
+        evmChainId,
+        evmAddress,
+      };
+      const payload = buildUaidPayload(uaidRecipe, payloadInputs);
+      const hcs14 = new HCS14Client();
+      const uaid = await hcs14.createUaid(payload, {
+        uid: generateUid(payload.name),
+      });
+
+      setGeneratedUaid(uaid);
+      setGeneratedRecipe(uaidRecipe);
+      toast({
+        title: "UAID generated",
+        description: "Generated successfully for metadata inclusion and demo display.",
+      });
+    } catch (error) {
+      toast({
+        title: "UAID generation failed",
+        description: extractReadableError(error),
+        variant: "destructive",
+      });
+    } finally {
+      setIsGeneratingUaid(false);
+    }
+  };
+
+  const copyUaid = async () => {
+    if (!generatedUaid) {
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(generatedUaid);
+      toast({
+        title: "Copied",
+        description: "UAID copied to clipboard",
+      });
+    } catch {
+      toast({
+        title: "Copy failed",
+        description: "Unable to access clipboard in this environment.",
+        variant: "destructive",
+      });
+    }
+  };
+
   return (
     <div className="max-w-[1280px] mx-auto px-6 bg-gradient-animate">
       <header className="pt-16 pb-12">
@@ -807,8 +1015,8 @@ export default function RegisterAgentPage() {
             </div>
           </section>
 
-          <aside className="lg:col-span-4 space-y-8">
-            <div className="glass-effect rounded-[18px] overflow-hidden flex flex-col min-h-[480px]">
+          <aside className="lg:col-span-4 flex flex-col gap-8 h-full">
+            <div className="glass-effect rounded-[18px] overflow-hidden flex flex-col min-h-[480px] flex-1">
               <div className="p-5 border-b border-white/5">
                 <h3 className="text-[20px] font-bold text-white">Protocol Logs</h3>
                 <p className="text-xs text-slate-500">Live protocol events from Hedera Mirror Node</p>
@@ -832,29 +1040,180 @@ export default function RegisterAgentPage() {
               </div>
             </div>
 
-            <div className="glass-effect rounded-[18px] p-6 text-center">
-              <h3 className="text-sm font-bold text-slate-500 uppercase tracking-widest mb-6">Validation Flow</h3>
-              <div className="flex justify-center items-center py-4">
-                <svg className="overflow-visible" height="120" viewBox="0 0 280 120" width="280">
-                  <g className="node-animate-agent">
-                    <rect fill="rgba(59, 130, 246, 0.2)" height="40" rx="8" stroke="#3b82f6" strokeWidth="1.5" width="50" x="0" y="40" />
-                    <text fill="white" fontFamily="Inter" fontSize="8" fontWeight="bold" textAnchor="middle" x="25" y="65">AGENT</text>
-                  </g>
-                  <g className="node-animate-validator">
-                    <rect fill="rgba(168, 85, 247, 0.1)" height="80" rx="8" stroke="#a855f7" strokeWidth="1.5" width="60" x="110" y="20" />
-                    <text fill="white" fontFamily="Inter" fontSize="8" fontWeight="bold" textAnchor="middle" x="140" y="55">VALIDATORS</text>
-                    <text fill="#a855f7" fontFamily="Inter" fontSize="7" fontWeight="600" textAnchor="middle" x="140" y="75">CONSENSUS</text>
-                  </g>
-                  <g className="node-animate-trust">
-                    <circle cx="250" cy="60" fill="rgba(34, 197, 94, 0.1)" r="25" stroke="#22c55e" strokeWidth="1.5" />
-                    <text fill="white" fontFamily="Inter" fontSize="8" fontWeight="bold" textAnchor="middle" x="250" y="60">TRUST</text>
-                    <text fill="#22c55e" fontFamily="Inter" fontSize="7" fontWeight="600" textAnchor="middle" x="250" y="72">SCORE</text>
-                  </g>
-                  <path className="flow-line" d="M50 60 H110" fill="none" stroke="#3b82f6" strokeWidth="1.5" />
-                  <path className="flow-line" d="M170 60 H225" fill="none" stroke="#a855f7" strokeWidth="1.5" style={{ animationDelay: "1.5s" }} />
-                </svg>
+            <div className="glass-effect rounded-[18px] p-6 relative overflow-hidden border border-trust-blue/30 shadow-[0_0_28px_rgba(59,130,246,0.14)] transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_16px_42px_-20px_rgba(104,114,255,0.85)] mt-auto">
+              <div className="absolute left-0 top-0 h-[2px] w-full bg-[linear-gradient(90deg,transparent,rgba(59,130,246,0.9),rgba(168,85,247,0.9),transparent)] animate-pulse" />
+              <h3 className="text-[20px] font-bold text-white">Universal Agent ID (HCS-14)</h3>
+              <p className="text-sm text-slate-400 mt-1">Generate a globally identifiable ID for your AI agent</p>
+              <p className="text-xs text-slate-500 mt-2">Choose how your agent identity is derived across ecosystems</p>
+              <p className="text-xs text-trust-blue/90 mt-1">Supports multi-ecosystem identity via HCS-14 recipes</p>
+
+              <div className="mt-5">
+                <div className="flex bg-black/40 p-1 rounded-[12px] border border-slate-700/50 gap-1">
+                  {([
+                    { key: "A2A", label: "A2A / Web2" },
+                    { key: "DID_WEB", label: "did:web" },
+                    { key: "EVM", label: "EVM (EIP-155)" },
+                  ] as const).map((option) => (
+                    <button
+                      key={option.key}
+                      onClick={() => setUaidRecipe(option.key)}
+                      className={`flex-1 py-2 text-[11px] font-bold rounded-[8px] transition-all ${uaidRecipe === option.key ? "bg-gradient-to-r from-trust-blue to-trust-purple text-white shadow-[0_0_12px_rgba(59,130,246,0.5)]" : "text-slate-500 hover:text-slate-300"}`}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-[10px] text-slate-500 mt-2">Identity derivation method</p>
               </div>
-              <p className="text-xs text-slate-500 italic mt-2">Validators continuously verify agent reasoning against proposed outputs.</p>
+
+              <div className="mt-4 inline-flex items-center rounded-full border border-trust-purple/40 bg-trust-purple/10 px-3 py-1 text-[11px] font-semibold text-trust-purple-light">
+                {getRecipeBadge(uaidRecipe)}
+              </div>
+
+              <div className="space-y-4 text-left mt-5 transition-all duration-300">
+                {uaidRecipe !== "DID_WEB" && (
+                  <div className="animate-in fade-in-50 slide-in-from-top-1 duration-300">
+                    <label className="block text-sm font-medium text-slate-300 mb-2">Agent Name</label>
+                    <input
+                      className="w-full bg-slate-900/50 border border-slate-700 rounded-lg px-4 py-2 text-slate-200 focus:ring-1 focus:ring-trust-blue outline-none"
+                      placeholder="e.g. CalculatorAgent"
+                      value={uaidName}
+                      onChange={(event) => setUaidName(event.target.value)}
+                    />
+                  </div>
+                )}
+
+                {uaidRecipe === "DID_WEB" ? (
+                  <div className="animate-in fade-in-50 slide-in-from-top-1 duration-300">
+                    <label className="block text-sm font-medium text-slate-300 mb-2">DID (did:web)</label>
+                    <input
+                      className="w-full bg-slate-900/50 border border-slate-700 rounded-lg px-4 py-2 text-slate-200 focus:ring-1 focus:ring-trust-blue outline-none"
+                      placeholder="did:web:example.com"
+                      value={didWebValue}
+                      onChange={(event) => setDidWebValue(event.target.value)}
+                    />
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 animate-in fade-in-50 slide-in-from-top-1 duration-300">
+                    <div>
+                      <label className="block text-sm font-medium text-slate-300 mb-2">Version</label>
+                      <input
+                        className="w-full bg-slate-900/50 border border-slate-700 rounded-lg px-4 py-2 text-slate-200 focus:ring-1 focus:ring-trust-blue outline-none"
+                        value={uaidVersion}
+                        onChange={(event) => setUaidVersion(event.target.value)}
+                      />
+                    </div>
+                    {uaidRecipe === "A2A" ? (
+                      <div>
+                        <label className="block text-sm font-medium text-slate-300 mb-2">Protocol</label>
+                        <select
+                          className="w-full bg-slate-900/50 border border-slate-700 rounded-lg px-4 py-2 text-slate-200 focus:ring-1 focus:ring-trust-blue outline-none"
+                          value={uaidProtocol}
+                          onChange={(event) => setUaidProtocol(event.target.value as UaidProtocol)}
+                        >
+                          <option value="rest">rest</option>
+                          <option value="hcs-10">hcs-10</option>
+                          <option value="a2a">a2a</option>
+                        </select>
+                      </div>
+                    ) : (
+                      <div>
+                        <label className="block text-sm font-medium text-slate-300 mb-2">EVM Chain ID</label>
+                        <input
+                          className="w-full bg-slate-900/50 border border-slate-700 rounded-lg px-4 py-2 text-slate-200 focus:ring-1 focus:ring-trust-blue outline-none"
+                          placeholder="e.g. 1"
+                          value={evmChainId}
+                          onChange={(event) => setEvmChainId(event.target.value)}
+                        />
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {uaidRecipe === "A2A" && (
+                  <div className="animate-in fade-in-50 slide-in-from-top-1 duration-300 space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-slate-300 mb-2">Native ID (optional)</label>
+                      <input
+                        className="w-full bg-slate-900/50 border border-slate-700 rounded-lg px-4 py-2 text-slate-200 focus:ring-1 focus:ring-trust-blue outline-none"
+                        placeholder="External agent identifier"
+                        value={uaidNativeId}
+                        onChange={(event) => setUaidNativeId(event.target.value)}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-300 mb-2">Skills (comma-separated numbers)</label>
+                      <input
+                        className="w-full bg-slate-900/50 border border-slate-700 rounded-lg px-4 py-2 text-slate-200 focus:ring-1 focus:ring-trust-blue outline-none"
+                        placeholder="1,2,3"
+                        value={uaidSkillsInput}
+                        onChange={(event) => setUaidSkillsInput(event.target.value)}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {uaidRecipe === "EVM" && (
+                  <div className="animate-in fade-in-50 slide-in-from-top-1 duration-300 space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-slate-300 mb-2">EVM Address</label>
+                      <input
+                        className="w-full bg-slate-900/50 border border-slate-700 rounded-lg px-4 py-2 text-slate-200 focus:ring-1 focus:ring-trust-blue outline-none"
+                        placeholder="0x..."
+                        value={evmAddress}
+                        onChange={(event) => setEvmAddress(event.target.value)}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-300 mb-2">Skills (comma-separated numbers)</label>
+                      <input
+                        className="w-full bg-slate-900/50 border border-slate-700 rounded-lg px-4 py-2 text-slate-200 focus:ring-1 focus:ring-trust-blue outline-none"
+                        placeholder="1,2,3"
+                        value={uaidSkillsInput}
+                        onChange={(event) => setUaidSkillsInput(event.target.value)}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {uaidRecipe === "DID_WEB" && (
+                  <div className="animate-in fade-in-50 slide-in-from-top-1 duration-300">
+                    <label className="block text-sm font-medium text-slate-300 mb-2">Version</label>
+                    <input
+                      className="w-full bg-slate-900/50 border border-slate-700 rounded-lg px-4 py-2 text-slate-200 focus:ring-1 focus:ring-trust-blue outline-none"
+                      value={uaidVersion}
+                      onChange={(event) => setUaidVersion(event.target.value)}
+                    />
+                  </div>
+                )}
+
+                <button
+                  onClick={generateUaid}
+                  disabled={isGeneratingUaid}
+                  className="w-full h-[48px] rounded-[14px] bg-gradient-to-r from-trust-blue to-trust-purple text-white font-bold shadow-[0_10px_24px_-8px_rgba(81,117,255,0.8)] transition-all duration-300 hover:scale-[1.02] hover:shadow-[0_0_26px_rgba(129,92,246,0.65)] disabled:opacity-60 disabled:cursor-not-allowed disabled:transform-none"
+                >
+                  {isGeneratingUaid ? "Generating..." : "Generate UAID"}
+                </button>
+
+                {generatedUaid && (
+                  <div className="mt-2 rounded-xl border border-[#07f27166] bg-[#01020e] p-4 shadow-[0_0_22px_rgba(7,242,113,0.22)]">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="font-mono text-sm break-all text-[#07f271]">{generatedUaid}</p>
+                        <p className="text-[11px] text-slate-400 mt-2">Recipe: {generatedRecipe === "A2A" ? "A2A / Web2" : generatedRecipe === "DID_WEB" ? "did:web" : "EVM (EIP-155)"}</p>
+                      </div>
+                      <button
+                        onClick={() => void copyUaid()}
+                        className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-slate-900 border border-slate-700 text-slate-200 hover:border-trust-blue/60 hover:text-white transition"
+                      >
+                        <span className="material-symbols-outlined text-base">content_copy</span>
+                        <span className="text-xs font-semibold">Copy</span>
+                      </button>
+                    </div>
+                    <p className="text-[11px] text-slate-500 mt-2">Globally identifiable across AI agent ecosystems</p>
+                  </div>
+                )}
+              </div>
             </div>
           </aside>
         </div>
@@ -864,7 +1223,7 @@ export default function RegisterAgentPage() {
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
               <div className="max-w-md">
                 <h2 className="text-lg font-bold text-red-500 mb-1">Danger Zone</h2>
-                <p className="text-sm text-[#ef5d1f]">​Revoke an agent whose trust score falls below the protocol threshold due to malicious or unreliable behavior. The agent’s stake is liquidated and the caller receives a 1% bounty reward.</p>
+                <p className="text-sm text-[#ef5d1f]">Revoke an agent whose trust score falls below the protocol threshold due to malicious or unreliable behavior. The agent’s stake is liquidated and the caller receives a 1% bounty reward.</p>
               </div>
               <div className="flex-1 max-w-lg flex items-center gap-4">
                 <input

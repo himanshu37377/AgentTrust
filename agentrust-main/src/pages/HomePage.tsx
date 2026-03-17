@@ -35,7 +35,7 @@ export default function HomePage() {
               <span className="text-transparent bg-clip-text bg-gradient-to-r from-trust-accent-blue via-[#00ffd5] to-trust-accent-purple">AI Agents</span>
             </h1>
             <p className="text-xl md:text-2xl font-medium text-slate-400 max-w-3xl leading-relaxed mt-4">
-              A decentralized trust infrastructure for the autonomous economy. Verifying AI agent behavior through staking, validator consensus, and execution trace validation.
+              AgentTrust enables organizations to launch AI-driven workflows with measurable accountability. Every agent action is backed by execution evidence, validator review, and continuously updated trust signals.
 
             </p>
             <div className="flex flex-wrap items-center justify-center gap-6 mt-6">
@@ -62,7 +62,7 @@ export default function HomePage() {
                 The Trust Gap in <br /><span className="text-transparent bg-clip-text bg-gradient-to-r from-trust-accent-purple to-trust-accent-blue">AI Agents</span>
               </h2>
               <p className="text-slate-300 text-[20px] font-medium leading-relaxed">
-                AI agents are becoming autonomous systems capable of trading assets, analyzing sensitive data, and performing complex tasks across the web.
+                Autonomous agents now execute payments, negotiate APIs, and automate critical decisions at machine speed. Without verifiable oversight, teams cannot confidently rely on them in production.
               </p>
               <div className="p-8 rounded-2xl bg-trust-accent-purple/5 border-2 border-trust-accent-purple/20 relative group overflow-hidden">
                 <div className="absolute inset-0 bg-trust-accent-purple/5 blur-2xl opacity-50 group-hover:opacity-100 transition-opacity" />

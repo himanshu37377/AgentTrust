@@ -17,6 +17,10 @@ type ExecutionItem = {
   agentId: number;
   agentName: string;
   capability: string;
+  parentExecutionId: number;
+  callerAgentId: number;
+  involvesExternalCall: boolean;
+  externalService: string;
   deterministic: boolean;
   receivedAt: string;
   trustScore: string;
@@ -34,6 +38,10 @@ const pendingExecutions: ExecutionItem[] = [
     agentId: 7,
     agentName: "Sentience Alpha",
     capability: "strategy_execution",
+    parentExecutionId: 0,
+    callerAgentId: 0,
+    involvesExternalCall: false,
+    externalService: "None",
     deterministic: false,
     receivedAt: "2m ago",
     trustScore: "54 / 100",
@@ -49,6 +57,10 @@ const pendingExecutions: ExecutionItem[] = [
     agentId: 9,
     agentName: "Atlas Planner",
     capability: "report_generation",
+    parentExecutionId: 0,
+    callerAgentId: 0,
+    involvesExternalCall: false,
+    externalService: "None",
     deterministic: false,
     receivedAt: "8m ago",
     trustScore: "61 / 100",
@@ -64,6 +76,10 @@ const pendingExecutions: ExecutionItem[] = [
     agentId: 12,
     agentName: "Orion Delegate",
     capability: "portfolio_rebalancing",
+    parentExecutionId: 0,
+    callerAgentId: 0,
+    involvesExternalCall: false,
+    externalService: "None",
     deterministic: false,
     receivedAt: "14m ago",
     trustScore: "58 / 100",
@@ -120,8 +136,11 @@ export default function ValidatorsPage() {
   const [isUnregisteringValidator, setIsUnregisteringValidator] = useState(false);
   const [isRegisteringValidator, setIsRegisteringValidator] = useState(false);
   const [validatorProfile, setValidatorProfile] = useState<ValidatorProfile | null>(null);
+  const [isValidatorProfileLoading, setIsValidatorProfileLoading] = useState(true);
   const [stakeRequirement, setStakeRequirement] = useState("100");
   const validationsPerPage = 3;
+  const isWalletConnected = Boolean(validatorProfile?.address);
+  const hasValidatorAccess = Boolean(validatorProfile?.isRegistered && isWalletConnected);
 
   const totalValidationPages = Math.max(1, Math.ceil(pendingExecutions.length / validationsPerPage));
   const currentExecutions = pendingExecutions.slice(
@@ -166,6 +185,8 @@ export default function ValidatorsPage() {
     let isMounted = true;
 
     const loadValidatorProfile = async () => {
+      setIsValidatorProfileLoading(true);
+
       try {
         const [profile, requirement] = await Promise.all([
           fetchConnectedValidatorProfile(),
@@ -178,6 +199,10 @@ export default function ValidatorsPage() {
       } catch {
         if (!isMounted) return;
         setValidatorProfile(null);
+      } finally {
+        if (isMounted) {
+          setIsValidatorProfileLoading(false);
+        }
       }
     };
 
@@ -315,6 +340,8 @@ export default function ValidatorsPage() {
           </button>
         </header>
 
+        {hasValidatorAccess ? (
+          <>
         <section className="grid grid-cols-2 lg:grid-cols-4 gap-6">
           {[
             { label: "Total Validators", value: "27" },
@@ -432,6 +459,27 @@ export default function ValidatorsPage() {
 
                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                           <div className="rounded-xl border border-white/5 bg-slate-950/50 p-5">
+                            <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500 mb-3">Execution Context</p>
+                            <dl className="space-y-2 text-sm text-slate-300">
+                              <div className="flex items-center justify-between gap-4">
+                                <dt className="text-slate-400">Parent Execution ID</dt>
+                                <dd className="font-medium text-white">{execution.parentExecutionId}</dd>
+                              </div>
+                              <div className="flex items-center justify-between gap-4">
+                                <dt className="text-slate-400">Caller Agent ID</dt>
+                                <dd className="font-medium text-white">{execution.callerAgentId}</dd>
+                              </div>
+                              <div className="flex items-center justify-between gap-4">
+                                <dt className="text-slate-400">External Call</dt>
+                                <dd className="font-medium text-white">{execution.involvesExternalCall ? "Yes" : "No"}</dd>
+                              </div>
+                              <div className="flex items-center justify-between gap-4">
+                                <dt className="text-slate-400">External Service</dt>
+                                <dd className="font-medium text-white text-right">{execution.externalService}</dd>
+                              </div>
+                            </dl>
+                          </div>
+                          <div className="rounded-xl border border-white/5 bg-slate-950/50 p-5">
                             <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500 mb-3">Reasoning</p>
                             <p className="text-sm leading-relaxed text-slate-300">{execution.reasoning}</p>
                           </div>
@@ -504,6 +552,77 @@ export default function ValidatorsPage() {
             </div>
           </aside>
         </div>
+        </>
+        ) : (
+          <section className="glass-card rounded-2xl border border-white/10 p-8 md:p-10" style={{ background: "radial-gradient(circle at top right, rgba(79,140,255,0.14), rgba(12, 18, 32, 0.94) 52%)" }}>
+            <div className="grid grid-cols-1 lg:grid-cols-[1.3fr_1fr] gap-8 items-start">
+              <div>
+                <div className="inline-flex items-center gap-2 rounded-full border border-trust-accent-blue/30 bg-trust-accent-blue/10 px-3 py-1">
+                  <span className="material-symbols-outlined text-trust-accent-blue text-sm">shield_lock</span>
+                  <p className="text-[10px] font-black uppercase tracking-[0.24em] text-trust-accent-blue/90">Validator Access</p>
+                </div>
+                <h2 className="mt-4 text-3xl font-bold tracking-tight text-white">
+                  {isValidatorProfileLoading
+                    ? "Checking validator permissions..."
+                    : isWalletConnected
+                      ? "Validator registration required"
+                      : "Connect your wallet to continue"}
+                </h2>
+                <p className="mt-3 text-slate-400 text-sm md:text-base leading-relaxed max-w-2xl">
+                  {isValidatorProfileLoading
+                    ? "We are verifying your connected account and validator registration status against the protocol."
+                    : isWalletConnected
+                      ? "Only registered validators can access execution review workflows. Use the Become Validator action in the page header to complete staking and registration."
+                      : "This section is restricted to validator accounts. Connect your wallet from the top navigation, then register that wallet as a validator to unlock this dashboard."}
+                </p>
+
+                <div className="mt-8 grid grid-cols-1 md:grid-cols-3 gap-4">
+                  {[
+                    {
+                      icon: "account_balance_wallet",
+                      title: "Wallet Connected",
+                      value: isValidatorProfileLoading ? "Checking" : isWalletConnected ? "Yes" : "No",
+                    },
+                    {
+                      icon: "verified_user",
+                      title: "Validator Registered",
+                      value: isValidatorProfileLoading ? "Checking" : validatorProfile?.isRegistered ? "Yes" : "No",
+                    },
+                    {
+                      icon: "lock_open_right",
+                      title: "Dashboard Access",
+                      value: isValidatorProfileLoading ? "Pending" : hasValidatorAccess ? "Granted" : "Locked",
+                    },
+                  ].map((item) => (
+                    <div key={item.title} className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+                      <div className="flex items-center gap-2 text-slate-400 text-xs uppercase tracking-[0.18em] font-bold">
+                        <span className="material-symbols-outlined text-base text-trust-accent-blue">{item.icon}</span>
+                        {item.title}
+                      </div>
+                      <p className="mt-3 text-lg font-semibold text-white">{item.value}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-white/10 bg-black/20 p-5">
+                <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-slate-400">Unlock Steps</p>
+                <div className="mt-4 space-y-3">
+                  {[
+                    "Connect your Hedera wallet in the navigation bar.",
+                    `Stake at least ${stakeRequirement.split(".")[0]} HBAR and register as validator.`,
+                    "Return to this page to review and vote on pending executions.",
+                  ].map((step, index) => (
+                    <div key={step} className="flex items-start gap-3 rounded-xl border border-white/10 bg-white/[0.02] p-3">
+                      <span className="mt-0.5 inline-flex h-5 w-5 items-center justify-center rounded-full bg-trust-accent-blue/20 text-[11px] font-bold text-trust-accent-blue">{index + 1}</span>
+                      <p className="text-sm leading-relaxed text-slate-300">{step}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </section>
+        )}
 
       </div>
 

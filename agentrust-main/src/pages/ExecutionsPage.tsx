@@ -133,6 +133,48 @@ export default function ExecutionsPage() {
     });
   }, [activeFilter, historyEntries, search]);
 
+  useEffect(() => {
+    if (filtered.length === 0) return;
+
+    const selectedInFiltered = filtered.some((entry) => entry.id === selectedExecution.id);
+    if (!selectedInFiltered) {
+      setSelectedExecution(filtered[0]);
+    }
+  }, [filtered, selectedExecution.id]);
+
+  const parsedEventDetail = useMemo(() => {
+    try {
+      const parsed = JSON.parse(selectedExecution.detailJson) as Record<string, unknown>;
+      return parsed;
+    } catch {
+      return { raw: selectedExecution.detailJson } satisfies Record<string, unknown>;
+    }
+  }, [selectedExecution.detailJson]);
+
+  const inspectionJson = useMemo(() => {
+    return JSON.stringify(
+      {
+        event: {
+          id: selectedExecution.id,
+          type: selectedExecution.eventType,
+          source: selectedExecution.source,
+          class: selectedExecution.eventClass,
+          entity: selectedExecution.entity,
+          outcome: selectedExecution.outcome,
+          txHash: selectedExecution.txHash,
+          timestamp: {
+            label: selectedExecution.timestampLabel,
+            value: selectedExecution.timestampValue,
+          },
+          description: selectedExecution.description,
+        },
+        emittedArgs: parsedEventDetail,
+      },
+      null,
+      2,
+    );
+  }, [parsedEventDetail, selectedExecution]);
+
   return (
     <div className="relative z-10 max-w-[1280px] mx-auto px-6 py-10">
       {/* Background */}
@@ -198,9 +240,12 @@ export default function ExecutionsPage() {
       </section>
 
       {/* Table + Panel */}
-      <div className="grid grid-cols-1 lg:grid-cols-[2fr_1fr] gap-[28px]" style={{ alignItems: "stretch" }}>
-        <div className="glass-effect rounded-twelve flex flex-col overflow-hidden border border-white/5" style={{ minHeight: 620 }}>
-          <div className="h-0.5 w-full bg-gradient-to-r from-trust-accent-blue/70 via-trust-accent-purple/60 to-transparent" />
+      <div className="grid grid-cols-1 lg:grid-cols-[2.15fr_1fr] gap-[28px]" style={{ alignItems: "stretch" }}>
+        <div
+          className="glass-effect rounded-twelve flex flex-col overflow-hidden border border-white/10 shadow-[0_20px_80px_rgba(76,92,255,0.12)]"
+          style={{ minHeight: 760 }}
+        >
+          <div className="h-1 w-full bg-gradient-to-r from-trust-accent-blue/90 via-brand-primary/80 to-trust-accent-purple/70" />
           <div className="flex-grow overflow-x-auto">
             <table className="w-full text-left border-collapse min-w-[720px]">
               <thead
@@ -218,12 +263,14 @@ export default function ExecutionsPage() {
                   <th className="px-6 py-4 font-semibold text-right">Action</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-white/5 text-sm">
+              <tbody className="divide-y divide-white/5 text-sm bg-gradient-to-b from-white/[0.03] to-transparent">
                 {filtered.map((ex) => (
                   <tr
                     key={ex.id}
-                    className={`transition-colors cursor-pointer ${
-                      selectedExecution.id === ex.id ? "bg-white/10" : "odd:bg-white/[0.02] even:bg-transparent"
+                    className={`transition-all duration-200 cursor-pointer ${
+                      selectedExecution.id === ex.id
+                        ? "bg-gradient-to-r from-brand-primary/20 via-brand-primary/10 to-transparent shadow-[inset_0_0_0_1px_rgba(120,140,255,0.35)]"
+                        : "odd:bg-white/[0.02] even:bg-transparent"
                     } hover:bg-white/5`}
                     onClick={() => setSelectedExecution(ex)}
                   >
@@ -248,7 +295,15 @@ export default function ExecutionsPage() {
                       </span>
                     </td>
                     <td className="px-6 py-4 text-right">
-                      <button className="text-brand-primary border border-brand-primary/20 px-3 py-1 rounded-full hover:bg-brand-primary hover:text-white transition-all text-xs font-medium">Inspect</button>
+                      <button
+                        className="text-brand-primary border border-brand-primary/25 px-3 py-1 rounded-full hover:bg-brand-primary hover:text-white hover:shadow-[0_0_20px_rgba(88,113,255,0.45)] transition-all text-xs font-medium"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          setSelectedExecution(ex);
+                        }}
+                      >
+                        Inspect
+                      </button>
                     </td>
                   </tr>
                 ))}
@@ -278,9 +333,9 @@ export default function ExecutionsPage() {
         </div>
 
         {/* Right Panel */}
-        <div className="flex flex-col gap-6">
+        <div className="flex flex-col gap-6" style={{ minHeight: 760 }}>
           {/* Inspection */}
-          <div className="glass-effect rounded-twelve p-6 bg-gradient-to-br from-brand-primary/5 to-transparent border-brand-primary/20 flex flex-col">
+          <div className="glass-effect rounded-twelve p-6 bg-gradient-to-br from-brand-primary/10 via-indigo-500/5 to-transparent border-brand-primary/30 shadow-[0_20px_60px_rgba(76,92,255,0.14)] flex flex-col">
             <div className="flex items-center justify-between mb-6">
               <div>
                 <h4 className="text-sm font-bold text-white uppercase tracking-wider">Inspection: {selectedExecution.eventType}</h4>
@@ -293,26 +348,57 @@ export default function ExecutionsPage() {
             <div className="space-y-6 flex flex-col">
               <div className="flex flex-col gap-2">
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Event Metadata</span>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="bg-black/30 p-2.5 rounded-lg border border-white/5">
-                    <p className="text-[10px] text-slate-500 mb-0.5">SOURCE</p>
-                    <p className="text-xs text-slate-200 font-mono">{selectedExecution.eventClass}</p>
-                  </div>
-                  <div className="bg-black/30 p-2.5 rounded-lg border border-white/5">
-                    <p className="text-[10px] text-slate-500 mb-0.5">ENTITY</p>
-                    <p className="text-xs text-slate-200 font-mono">{selectedExecution.entity}</p>
+                <div className="grid grid-cols-2 gap-3">
+                  {[
+                    {
+                      label: "Agent ID",
+                      value:
+                        (typeof parsedEventDetail.agentId === "string" || typeof parsedEventDetail.agentId === "number"
+                          ? String(parsedEventDetail.agentId)
+                          : selectedExecution.entity.match(/#(\d+)/)?.[1]) ?? "N/A",
+                    },
+                    {
+                      label: "Execution ID",
+                      value:
+                        (typeof parsedEventDetail.executionId === "string" || typeof parsedEventDetail.executionId === "number"
+                          ? String(parsedEventDetail.executionId)
+                          : selectedExecution.description.match(/#(\d+)/)?.[1]) ?? "N/A",
+                    },
+                  ].map((meta) => (
+                    <div key={meta.label} className="bg-black/40 p-3 rounded-lg border border-white/10 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03)]">
+                      <p className="text-[10px] text-slate-500 mb-1 uppercase tracking-wider">{meta.label}</p>
+                      <p className="text-xs text-slate-200 font-mono break-all">{meta.value}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Emitted Event Args</span>
+                  <span className="text-[10px] text-slate-500 font-mono">{Object.keys(parsedEventDetail).length} fields</span>
+                </div>
+                <div className="bg-slate-950/90 rounded-lg border border-white/10 p-3 shadow-[0_10px_30px_rgba(0,0,0,0.35)]">
+                  <div className="flex flex-wrap gap-2">
+                    {Object.entries(parsedEventDetail).map(([key, value]) => (
+                      <div key={key} className="rounded-md border border-white/10 bg-white/5 px-2.5 py-1.5">
+                        <p className="text-[10px] text-slate-500 uppercase tracking-wide">{key}</p>
+                        <p className="text-xs text-slate-200 font-mono break-all">{typeof value === "string" ? value : JSON.stringify(value)}</p>
+                      </div>
+                    ))}
                   </div>
                 </div>
               </div>
+
               <div className="flex flex-col gap-2">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Event Detail</span>
-                <div className="bg-slate-950 rounded-lg border border-white/10 font-mono text-xs overflow-hidden flex flex-col">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Full Event Details</span>
+                <div className="bg-slate-950/90 rounded-lg border border-white/10 font-mono text-xs overflow-hidden flex flex-col shadow-[0_10px_30px_rgba(0,0,0,0.35)]">
                   <div className="px-3 py-2 bg-white/5 border-b border-white/5 flex items-center justify-between">
-                    <span className="text-[10px] text-slate-500 uppercase">JSON View</span>
+                    <span className="text-[10px] text-slate-500 uppercase">Inspection JSON</span>
                     <span className="w-2 h-2 rounded-full bg-brand-primary" />
                   </div>
-                  <div className="p-4 min-h-[300px]">
-                    <pre className="leading-relaxed break-words-all"><code className="block w-full">{selectedExecution.detailJson}</code></pre>
+                  <div className="p-4 min-h-[320px] max-h-[420px] overflow-auto">
+                    <pre className="leading-relaxed break-words-all"><code className="block w-full">{inspectionJson}</code></pre>
                   </div>
                 </div>
               </div>
@@ -320,25 +406,34 @@ export default function ExecutionsPage() {
           </div>
 
           {/* Timeline */}
-          <div className="glass-effect rounded-twelve overflow-hidden flex flex-col flex-grow">
-            <div className="px-4 py-3 border-b border-white/5 flex items-center justify-between bg-white/5">
+          <div className="glass-effect rounded-twelve overflow-hidden flex flex-col flex-grow border border-white/10 shadow-[0_20px_60px_rgba(46,88,255,0.1)]" style={{ minHeight: 360 }}>
+            <div className="px-4 py-3 border-b border-white/10 flex items-center justify-between bg-gradient-to-r from-white/10 to-transparent">
               <h3 className="text-xs font-bold text-white uppercase tracking-widest flex items-center gap-2">
                 <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" /> Timeline
               </h3>
               <span className="text-[10px] font-mono text-slate-500">LIVE FEED</span>
             </div>
-            <div className="bg-black/40 p-4 font-mono text-xs space-y-4 relative">
+            <div className="bg-black/45 p-4 font-mono text-xs space-y-4 relative flex-grow">
               <div className="scanline" />
               {(filtered.length ? filtered : fallbackExecutions)
                 .slice(0, 4)
                 .map((entry) => (
-                  <div key={entry.id} className="flex gap-4 group">
+                  <button
+                    key={entry.id}
+                    type="button"
+                    className={`w-full flex gap-4 group text-left rounded-lg px-2 py-2 transition-all ${
+                      selectedExecution.id === entry.id
+                        ? "bg-gradient-to-r from-brand-primary/20 to-transparent shadow-[inset_0_0_0_1px_rgba(120,140,255,0.28)]"
+                        : "hover:bg-white/5"
+                    }`}
+                    onClick={() => setSelectedExecution(entry)}
+                  >
                     <span className="text-slate-600 flex-shrink-0">{entry.timestampLabel}</span>
                     <div className="flex flex-col gap-1">
                       <span className={`${entry.eventColor} font-bold`}>{entry.eventType}</span>
                       <span className="text-slate-400">{entry.description}</span>
                     </div>
-                  </div>
+                  </button>
                 ))}
             </div>
           </div>

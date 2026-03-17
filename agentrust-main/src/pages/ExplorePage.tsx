@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import AgentDetailsModal from "@/components/AgentDetailsModal";
 import ComposeTaskModal from "@/components/ComposeTaskModal";
-import { fetchAgents, type Agent } from "@/lib/hedera";
+import { authorizeAgentCapabilities, fetchAgents, type Agent } from "@/lib/hedera";
+import { toast } from "@/components/ui/sonner";
 
 const staticAgents: Agent[] = [
   {
@@ -90,11 +91,70 @@ const riskColors: Record<string, string> = {
   red: "bg-red-500/10 text-red-500 border-red-500/20",
 };
 
+const AGENTS_PER_PAGE = 6;
+
+type FilterOption = { value: string; label: string };
+
+function FilterChipSelect({
+  value,
+  onChange,
+  options,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  options: FilterOption[];
+}) {
+  const activeLabel = options.find((option) => option.value === value)?.label ?? options[0].label;
+
+  return (
+    <div className="relative group">
+      <select
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="appearance-none h-9 min-w-[160px] pl-4 pr-8 rounded-full border border-white/10 bg-white/5 text-sm font-medium text-slate-300 transition-all hover:bg-white/10 hover:text-white focus:outline-none focus:ring-2 focus:ring-trust-accent-blue/40 focus:border-trust-accent-blue/40"
+      >
+        {options.map((option) => (
+          <option key={option.value} value={option.value} className="text-slate-900">
+            {option.label}
+          </option>
+        ))}
+      </select>
+      <span
+        className={`pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 material-symbols-outlined text-[14px] leading-none transition-colors ${
+          value === options[0].value ? "text-slate-500" : "text-trust-accent-blue"
+        }`}
+      >
+        expand_more
+      </span>
+      {value !== options[0].value && (
+        <span className="pointer-events-none absolute inset-0 rounded-full ring-1 ring-trust-accent-blue/25" aria-hidden="true" />
+      )}
+      <span className="sr-only">{activeLabel}</span>
+    </div>
+  );
+}
+
 export default function ExplorePage() {
   const [mode, setMode] = useState<"user" | "agent">("user");
   const [search, setSearch] = useState("");
+  const [selectedCapability, setSelectedCapability] = useState("all");
+  const [selectedTrustScore, setSelectedTrustScore] = useState("all");
+  const [selectedDomain, setSelectedDomain] = useState("all");
+  const [selectedRiskLevel, setSelectedRiskLevel] = useState("all");
+  const [selectedExecutionType, setSelectedExecutionType] = useState("all");
+  const [currentPage, setCurrentPage] = useState(1);
   const [agents, setAgents] = useState<Agent[]>([]);
-  const [detailsAgent, setDetailsAgent] = useState<Agent | null>(null);
+  const [detailsAgent, setDetailsAgent] = useState<{
+    name: string;
+    agentId: string;
+    rawAgentId: number;
+    description: string;
+    securityTier: string;
+    riskColor: string;
+    capabilities: { name: string; active: boolean }[];
+    authorizedCount: number;
+  } | null>(null);
+  const [isAuthorizing, setIsAuthorizing] = useState(false);
   const [composeAgent, setComposeAgent] = useState<Agent | null>(null);
 
   useEffect(() => {
@@ -118,7 +178,211 @@ export default function ExplorePage() {
     };
   }, []);
 
-  const allAgents = [...agents, ...staticAgents];
+  const handleAuthorizeCapabilities = async (agentId: number, capabilities: string[]) => {
+    const selectedCapabilities = capabilities
+      .map((capability) => capability.trim())
+      .filter(Boolean);
+
+    if (selectedCapabilities.length === 0) {
+      toast.error("Select at least one capability to authorize.");
+      return;
+    }
+
+    setIsAuthorizing(true);
+
+    try {
+      const { hash } = await authorizeAgentCapabilities(agentId, selectedCapabilities);
+      toast.success("Authorization submitted", {
+        description: `Authorized ${selectedCapabilities.length} capabilities. Tx: ${hash.slice(0, 10)}...`,
+      });
+    } catch (error) {
+      toast.error("Authorization failed", {
+        description: error instanceof Error ? error.message : "Unable to authorize capabilities",
+      });
+    } finally {
+      setIsAuthorizing(false);
+    }
+  };
+
+  const allAgents = useMemo(() => [...agents, ...staticAgents], [agents]);
+
+  const capabilityOptions = useMemo(() => {
+    const capabilities = new Set<string>();
+    allAgents.forEach((agent) => {
+      agent.capabilities.forEach((capability) => capabilities.add(capability.name));
+    });
+    return Array.from(capabilities).sort((a, b) => a.localeCompare(b));
+  }, [allAgents]);
+
+  const domainOptions = useMemo(() => {
+    const domains = new Set<string>();
+    allAgents.forEach((agent) => {
+      if (agent.domain) {
+        domains.add(agent.domain);
+      }
+    });
+    return Array.from(domains).sort((a, b) => a.localeCompare(b));
+  }, [allAgents]);
+
+  const executionTypeOptions = useMemo(() => {
+    const executionTypes = new Set<string>();
+    allAgents.forEach((agent) => {
+      if (agent.type) {
+        executionTypes.add(agent.type);
+      }
+    });
+    return Array.from(executionTypes).sort((a, b) => a.localeCompare(b));
+  }, [allAgents]);
+
+  const capabilityFilterOptions = useMemo(
+    () => [
+      { value: "all", label: "Capability" },
+      ...capabilityOptions.map((capability) => ({ value: capability, label: capability })),
+    ],
+    [capabilityOptions],
+  );
+
+  const trustScoreFilterOptions: FilterOption[] = [
+    { value: "all", label: "Trust Score" },
+    { value: "80_plus", label: "80 and above" },
+    { value: "60_79", label: "60 - 79" },
+    { value: "below_60", label: "Below 60" },
+  ];
+
+  const domainFilterOptions = useMemo(
+    () => [
+      { value: "all", label: "Domain" },
+      ...domainOptions.map((domain) => ({ value: domain, label: domain })),
+    ],
+    [domainOptions],
+  );
+
+  const riskLevelFilterOptions: FilterOption[] = [
+    { value: "all", label: "Risk Level" },
+    { value: "0", label: "Low Risk" },
+    { value: "1", label: "Medium Risk" },
+    { value: "2", label: "High Risk" },
+  ];
+
+  const executionTypeFilterOptions = useMemo(
+    () => [
+      { value: "all", label: "Execution Type" },
+      ...executionTypeOptions.map((executionType) => ({ value: executionType, label: executionType })),
+    ],
+    [executionTypeOptions],
+  );
+
+  const filteredAgents = useMemo(() => {
+    return allAgents.filter((agent) => {
+      if (search) {
+        const query = search.toLowerCase();
+        const matchesSearch =
+          agent.name.toLowerCase().includes(query) ||
+          agent.type.toLowerCase().includes(query) ||
+          agent.domain.toLowerCase().includes(query) ||
+          agent.capabilities.some((capability) => capability.name.toLowerCase().includes(query));
+
+        if (!matchesSearch) {
+          return false;
+        }
+      }
+
+      if (selectedCapability !== "all" && !agent.capabilities.some((capability) => capability.name === selectedCapability)) {
+        return false;
+      }
+
+      if (selectedDomain !== "all" && agent.domain !== selectedDomain) {
+        return false;
+      }
+
+      if (selectedRiskLevel !== "all") {
+        const riskValue = Number(selectedRiskLevel);
+        if (agent.riskLevel !== riskValue) {
+          return false;
+        }
+      }
+
+      if (selectedExecutionType !== "all" && agent.type !== selectedExecutionType) {
+        return false;
+      }
+
+      if (selectedTrustScore !== "all") {
+        const trustScore = agent.trustScore;
+        switch (selectedTrustScore) {
+          case "80_plus":
+            if (trustScore < 80) return false;
+            break;
+          case "60_79":
+            if (trustScore < 60 || trustScore > 79) return false;
+            break;
+          case "below_60":
+            if (trustScore >= 60) return false;
+            break;
+          default:
+            break;
+        }
+      }
+
+      return true;
+    });
+  }, [
+    allAgents,
+    search,
+    selectedCapability,
+    selectedDomain,
+    selectedExecutionType,
+    selectedRiskLevel,
+    selectedTrustScore,
+  ]);
+
+  const clearAllFilters = () => {
+    setSearch("");
+    setSelectedCapability("all");
+    setSelectedTrustScore("all");
+    setSelectedDomain("all");
+    setSelectedRiskLevel("all");
+    setSelectedExecutionType("all");
+    setCurrentPage(1);
+  };
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search, selectedCapability, selectedTrustScore, selectedDomain, selectedRiskLevel, selectedExecutionType]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredAgents.length / AGENTS_PER_PAGE));
+
+  useEffect(() => {
+    setCurrentPage((previous) => Math.min(previous, totalPages));
+  }, [totalPages]);
+
+  const paginatedAgents = useMemo(() => {
+    const startIndex = (currentPage - 1) * AGENTS_PER_PAGE;
+    return filteredAgents.slice(startIndex, startIndex + AGENTS_PER_PAGE);
+  }, [currentPage, filteredAgents]);
+
+  const blockchainAgentsById = useMemo(() => {
+    return new Map(agents.map((agent) => [agent.agentId, agent]));
+  }, [agents]);
+
+  const buildModalAgentDetails = (agent: Agent) => {
+    const onChainAgent = blockchainAgentsById.get(agent.agentId);
+    const source = onChainAgent ?? agent;
+    const capabilities = (source.capabilities.length ? source.capabilities : agent.capabilities).map((capability) => ({
+      name: capability.name,
+      active: capability.active,
+    }));
+
+    return {
+      name: source.name || agent.name,
+      agentId: `#${String(source.agentId ?? agent.agentId).padStart(3, "0")}`,
+      rawAgentId: source.agentId ?? agent.agentId,
+      description: source.description || agent.description,
+      securityTier: source.riskLabel || agent.riskLabel,
+      riskColor: source.riskColor || agent.riskColor,
+      capabilities,
+      authorizedCount: capabilities.filter((capability) => capability.active).length,
+    };
+  };
 
   return (
     <div className="max-w-[1280px] mx-auto w-full px-6 py-16 space-y-16">
@@ -172,36 +436,24 @@ export default function ExplorePage() {
 
         {/* Filters */}
         <div className="flex flex-wrap items-center justify-center gap-3">
-          {["Capability", "Trust Score", "Domain", "Risk Level", "Execution Type"].map((f) => (
-            <button key={f} className="flex items-center gap-2 px-4 py-2 rounded-full border border-white/10 bg-white/5 hover:bg-white/10 transition-all text-sm font-medium text-slate-300">
-              <span>{f}</span>
-              <span className="material-symbols-outlined text-sm">expand_more</span>
-            </button>
-          ))}
+          <FilterChipSelect value={selectedCapability} onChange={setSelectedCapability} options={capabilityFilterOptions} />
+          <FilterChipSelect value={selectedTrustScore} onChange={setSelectedTrustScore} options={trustScoreFilterOptions} />
+          <FilterChipSelect value={selectedDomain} onChange={setSelectedDomain} options={domainFilterOptions} />
+          <FilterChipSelect value={selectedRiskLevel} onChange={setSelectedRiskLevel} options={riskLevelFilterOptions} />
+          <FilterChipSelect value={selectedExecutionType} onChange={setSelectedExecutionType} options={executionTypeFilterOptions} />
           <div className="w-px h-6 bg-white/10 mx-2" />
-          <button className="text-trust-accent-blue text-sm font-medium hover:underline">Clear all</button>
+          <button
+            onClick={clearAllFilters}
+            className="h-10 px-4 rounded-full border border-trust-accent-blue/30 bg-trust-accent-blue/10 text-trust-accent-blue text-sm font-medium hover:bg-trust-accent-blue/20 transition-all"
+          >
+            Clear all
+          </button>
         </div>
       </div>
 
       {/* Agent Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {allAgents
-          .filter((agent) => {
-            if (!search) {
-              return true;
-            }
-
-            const query = search.toLowerCase();
-            return (
-              agent.name.toLowerCase().includes(query) ||
-              agent.type.toLowerCase().includes(query) ||
-              agent.domain.toLowerCase().includes(query) ||
-              agent.capabilities.some((capability) =>
-                capability.name.toLowerCase().includes(query),
-              )
-            );
-          })
-          .map((agent) => (
+        {paginatedAgents.map((agent) => (
             <div key={`${agent.agentId}-${agent.name}`} className="landing-card rounded-xl p-6 flex flex-col min-h-[420px]">
               <div className="flex justify-between items-start mb-6">
                 <div className="flex gap-4">
@@ -248,11 +500,36 @@ export default function ExplorePage() {
                 </span>
               </div>
               <div className="mt-auto grid grid-cols-2 gap-3">
-                <button onClick={() => setDetailsAgent(agent)} className="h-11 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10 font-medium text-sm transition-all text-white">View Details</button>
+                <button onClick={() => setDetailsAgent(buildModalAgentDetails(agent))} className="h-11 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10 font-medium text-sm transition-all text-white">View Details</button>
                 <button onClick={() => setComposeAgent(agent)} className="h-11 rounded-lg btn-gradient font-medium text-sm text-white">Compose Task</button>
               </div>
             </div>
           ))}
+      </div>
+
+      <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+        <p className="text-sm text-slate-400">
+          Showing {paginatedAgents.length} of {filteredAgents.length} agents
+        </p>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => setCurrentPage((previous) => Math.max(1, previous - 1))}
+            disabled={currentPage === 1}
+            className="h-10 px-4 rounded-lg border border-white/10 bg-white/5 text-sm font-medium text-white transition-all enabled:hover:bg-white/10 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            Previous
+          </button>
+          <span className="text-sm font-medium text-slate-300 min-w-[96px] text-center">
+            Page {currentPage} of {totalPages}
+          </span>
+          <button
+            onClick={() => setCurrentPage((previous) => Math.min(totalPages, previous + 1))}
+            disabled={currentPage === totalPages}
+            className="h-10 px-4 rounded-lg border border-white/10 bg-white/5 text-sm font-medium text-white transition-all enabled:hover:bg-white/10 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            Next
+          </button>
+        </div>
       </div>
 
       {/* Chain-of-Task Builder */}
@@ -284,15 +561,10 @@ export default function ExplorePage() {
       </div>
       {detailsAgent && (
         <AgentDetailsModal
-          agent={{
-            name: detailsAgent.name,
-            agentId: `#${String(detailsAgent.agentId).padStart(3, "0")}`,
-            description: detailsAgent.description,
-            risk: detailsAgent.riskLabel,
-            riskColor: detailsAgent.riskColor,
-            capabilities: detailsAgent.capabilities,
-            authorizedCount: detailsAgent.capabilities.filter((c) => c.active).length,
-          }}
+          agent={detailsAgent}
+          isAuthorizing={isAuthorizing}
+          onAuthorizeSelectedCapabilities={(capabilities) => handleAuthorizeCapabilities(detailsAgent.rawAgentId, capabilities)}
+          onAuthorizeAllCapabilities={(capabilities) => handleAuthorizeCapabilities(detailsAgent.rawAgentId, capabilities)}
           onClose={() => setDetailsAgent(null)}
         />
       )}

@@ -40,7 +40,7 @@ export interface ProtocolLogEntry {
 export interface ExecutionHistoryEntry {
   id: string;
   txHash: string;
-  source: "Validation" | "Reputation" | "HCS";
+  source: "Validation" | "Reputation" | "Staking" | "AgentRegistry" | "HCS";
   eventType: string;
   entity: string;
   eventClass: string;
@@ -66,7 +66,21 @@ interface AgentMetadata {
   name?: string;
   description?: string;
   domain?: string;
+  endpoint?: string;
   capabilities?: Array<string | { name?: string; active?: boolean }>;
+}
+
+export interface AgentExecutionMetadata {
+  metadataUri: string;
+  endpoint: string;
+  name?: string;
+  description?: string;
+}
+
+export interface AgentExecutionResponse {
+  input?: string;
+  result?: unknown;
+  outputHash?: string;
 }
 
 interface MirrorNodeLogResponse {
@@ -107,6 +121,7 @@ const REPUTATION_REGISTRY_ABI = [
   "event TrustScoreUpdated(uint256 indexed agentId,uint256 previousScore,uint256 newScore,bool accepted)",
   "event RatingReduced(uint256 indexed agentId,uint256 previousRating,uint256 newRating,uint16 reduction)",
   "event StakeSlashRequested(uint256 indexed agentId,uint256 penalty)",
+  "function submitReview(uint256 agentId,uint8 rating,string feedback) external",
   "function getTrustScore(uint256 agentId) view returns (uint256)",
 ] as const;
 
@@ -133,6 +148,10 @@ const STAKING_MANAGER_ABI = [
   "event Unstaked(uint256 indexed agentId,uint256 amount,address indexed owner)",
   "event Slashed(uint256 indexed agentId,uint256 amount)",
   "event Liquidated(uint256 indexed agentId,address indexed bonusReceiver,uint256 bonusAmount,uint256 seizedAmount)",
+] as const;
+
+const AUTHORIZATION_MANAGER_ABI = [
+  "function authorizeAgent(uint256 agentId,string[] capabilities) external",
 ] as const;
 
 const eventInterface = new Interface(AGENT_REGISTRY_ABI);
@@ -190,6 +209,14 @@ function getStakingManagerAddress() {
   const address = getEnv("VITE_STAKING_MANAGER_ADDRESS");
   if (!address) {
     throw new Error("Missing VITE_STAKING_MANAGER_ADDRESS");
+  }
+  return address;
+}
+
+function getAuthorizationManagerAddress() {
+  const address = getEnv("VITE_AUTHORIZATION_MANAGER_ADDRESS");
+  if (!address) {
+    throw new Error("Missing VITE_AUTHORIZATION_MANAGER_ADDRESS");
   }
   return address;
 }
@@ -377,6 +404,62 @@ async function fetchMetadata(metadataUri: string): Promise<AgentMetadata | null>
     console.warn("Unable to load agent metadata", { metadataUri, error });
     return null;
   }
+}
+
+export async function fetchAgentExecutionMetadata(agentId: number): Promise<AgentExecutionMetadata> {
+  const provider = getProvider();
+  const agentRegistry = new Contract(
+    getAgentRegistryAddress(),
+    AGENT_REGISTRY_ABI,
+    provider,
+  );
+
+  let agentRecord;
+  try {
+    agentRecord = await agentRegistry.getAgent(agentId);
+  } catch (error) {
+    const message = error instanceof Error ? error.message.toLowerCase() : "";
+    if (message.includes("not registered")) {
+      throw new Error("Agent metadata does not include a valid endpoint.");
+    }
+    throw new Error("Unable to load endpoint from agent metadata.");
+  }
+  const metadataUri = String(agentRecord.metadataURI ?? "").trim();
+
+  if (!metadataUri) {
+    throw new Error("Agent metadata URI is missing.");
+  }
+
+  const metadata = await fetchMetadata(metadataUri);
+  const endpoint = metadata?.endpoint?.trim();
+
+  if (!endpoint) {
+    throw new Error("Agent metadata does not include a valid endpoint.");
+  }
+
+  return {
+    metadataUri,
+    endpoint,
+    name: metadata?.name,
+    description: metadata?.description,
+  };
+}
+
+export async function executeAgentTask(endpoint: string, prompt: string): Promise<AgentExecutionResponse> {
+  const url = endpoint.replace(/\/+$/, "") + "/agent/execute";
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ prompt }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Agent execution failed with status ${response.status}`);
+  }
+
+  return (await response.json()) as AgentExecutionResponse;
 }
 
 function buildInitials(name: string) {
@@ -719,6 +802,56 @@ export async function unregisterValidator() {
     hash: tx.hash as string,
     receipt,
   };
+}
+
+
+export async function authorizeAgentCapabilities(agentId: number, capabilities: string[]) {
+  const ethereum = getEthereumProvider();
+  if (!ethereum) {
+    throw new Error("Wallet not available");
+  }
+
+  const sanitizedCapabilities = capabilities
+    .map((capability) => capability.trim())
+    .filter(Boolean);
+
+  if (sanitizedCapabilities.length === 0) {
+    throw new Error("Select at least one capability");
+  }
+
+  await ethereum.request({ method: "eth_requestAccounts" });
+
+  const provider = new BrowserProvider(ethereum as never);
+  const signer = await provider.getSigner();
+  const authorizationManager = new Contract(
+    getAuthorizationManagerAddress(),
+    AUTHORIZATION_MANAGER_ABI,
+    signer,
+  );
+
+  const tx = await authorizationManager.authorizeAgent(agentId, sanitizedCapabilities);
+  const receipt = await tx.wait();
+
+  return {
+    hash: tx.hash as string,
+    receipt,
+  };
+}
+
+export async function submitAgentReview(agentId: number, rating: number, feedback: string) {
+  const ethereum = getEthereumProvider();
+  if (!ethereum) {
+    throw new Error("No wallet found. Please install HashPack and refresh.");
+  }
+
+  await ethereum.request({ method: "eth_requestAccounts" });
+
+  const provider = new BrowserProvider(ethereum);
+  const signer = await provider.getSigner();
+  const contract = new Contract(getReputationRegistryAddress(), REPUTATION_REGISTRY_ABI, signer);
+  const tx = await contract.submitReview(agentId, rating, feedback);
+  await tx.wait();
+  return tx.hash as string;
 }
 
 export async function fetchProtocolLogs(limit = 12): Promise<ProtocolLogEntry[]> {

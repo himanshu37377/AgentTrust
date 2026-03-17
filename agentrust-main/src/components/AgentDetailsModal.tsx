@@ -4,7 +4,7 @@ interface AgentDetails {
   name: string;
   agentId: string;
   description: string;
-  risk: string;
+  securityTier: string;
   riskColor: string;
   capabilities: { name: string; active: boolean }[];
   authorizedCount: number;
@@ -12,10 +12,19 @@ interface AgentDetails {
 
 interface AgentDetailsModalProps {
   agent: AgentDetails;
+  isAuthorizing?: boolean;
+  onAuthorizeSelectedCapabilities?: (capabilities: string[]) => Promise<void> | void;
+  onAuthorizeAllCapabilities?: (capabilities: string[]) => Promise<void> | void;
   onClose: () => void;
 }
 
-export default function AgentDetailsModal({ agent, onClose }: AgentDetailsModalProps) {
+export default function AgentDetailsModal({
+  agent,
+  isAuthorizing = false,
+  onAuthorizeSelectedCapabilities,
+  onAuthorizeAllCapabilities,
+  onClose,
+}: AgentDetailsModalProps) {
   const [capabilities, setCapabilities] = useState(agent.capabilities);
 
   useEffect(() => {
@@ -34,12 +43,6 @@ export default function AgentDetailsModal({ agent, onClose }: AgentDetailsModalP
     green: "bg-emerald-500/10 border-emerald-500/20 text-emerald-400",
     yellow: "bg-yellow-500/10 border-yellow-500/20 text-yellow-400",
     red: "bg-red-500/10 border-red-500/20 text-red-400",
-  };
-
-  const riskLabels: Record<string, string> = {
-    green: "[ LOW RISK ]",
-    yellow: "[ MEDIUM RISK ]",
-    red: "[ HIGH RISK ]",
   };
 
   return (
@@ -95,8 +98,13 @@ export default function AgentDetailsModal({ agent, onClose }: AgentDetailsModalP
               </div>
               <div>
                 <label className="block text-[10px] uppercase tracking-[0.15em] text-slate-500 font-bold mb-3">Authorization</label>
-                <button className="w-full h-[42px] text-white text-sm font-semibold rounded-lg flex items-center justify-center gap-2 hover:opacity-90 transition-opacity" style={{ background: "linear-gradient(90deg, #4f46e5 0%, #9333ea 100%)" }}>
-                  Authorize Selected Capabilities
+                <button
+                  className="w-full h-[42px] text-white text-sm font-semibold rounded-lg flex items-center justify-center gap-2 hover:opacity-90 transition-opacity disabled:opacity-60 disabled:cursor-not-allowed"
+                  style={{ background: "linear-gradient(90deg, #4f46e5 0%, #9333ea 100%)" }}
+                  disabled={isAuthorizing}
+                  onClick={() => onAuthorizeSelectedCapabilities?.(capabilities.filter((capability) => capability.active).map((capability) => capability.name))}
+                >
+                  {isAuthorizing ? "Authorizing..." : "Authorize Selected Capabilities"}
                 </button>
                 <div className="mt-3 flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full bg-emerald-500" style={{ boxShadow: "0 0 8px rgba(16,185,129,0.5)" }} />
@@ -109,7 +117,7 @@ export default function AgentDetailsModal({ agent, onClose }: AgentDetailsModalP
               <div>
                 <label className="block text-[10px] uppercase tracking-[0.15em] text-slate-500 font-bold mb-3">Security Tier</label>
                 <div className={`inline-flex items-center px-3 py-1.5 rounded-md border text-[11px] font-bold tracking-wider ${riskStyles[agent.riskColor]}`}>
-                  {riskLabels[agent.riskColor]}
+                  {agent.securityTier.toUpperCase()}
                 </div>
               </div>
               <div>
@@ -147,8 +155,13 @@ export default function AgentDetailsModal({ agent, onClose }: AgentDetailsModalP
           <button onClick={onClose} className="px-6 py-2 rounded-lg text-slate-400 text-sm font-medium hover:text-white hover:bg-white/5 transition-all">
             Close
           </button>
-          <button className="px-8 py-2 rounded-lg text-white text-sm font-semibold hover:opacity-90 transition-opacity" style={{ background: "linear-gradient(90deg, #4f46e5 0%, #9333ea 100%)", boxShadow: "0 10px 20px rgba(79, 70, 229, 0.2)" }}>
-            Authorize
+          <button
+            className="px-8 py-2 rounded-lg text-white text-sm font-semibold hover:opacity-90 transition-opacity disabled:opacity-60 disabled:cursor-not-allowed"
+            style={{ background: "linear-gradient(90deg, #4f46e5 0%, #9333ea 100%)", boxShadow: "0 10px 20px rgba(79, 70, 229, 0.2)" }}
+            disabled={isAuthorizing}
+            onClick={() => onAuthorizeAllCapabilities?.(capabilities.map((capability) => capability.name))}
+          >
+            {isAuthorizing ? "Authorizing..." : "Authorize"}
           </button>
         </footer>
       </section>
