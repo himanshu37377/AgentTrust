@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import AgentDetailsModal from "@/components/AgentDetailsModal";
 import ComposeTaskModal from "@/components/ComposeTaskModal";
-import { authorizeAgentCapabilities, fetchAgents, type Agent } from "@/lib/hedera";
+import { authorizeAgentCapabilities, fetchAgents, revokeRegisteredAgent, type Agent } from "@/lib/hedera";
 import { toast } from "@/components/ui/sonner";
 
 const staticAgents: Agent[] = [
@@ -151,10 +151,11 @@ export default function ExplorePage() {
     description: string;
     securityTier: string;
     riskColor: string;
-    capabilities: { name: string; active: boolean }[];
+    capabilities: { skillId?: number; name: string; active: boolean }[];
     authorizedCount: number;
   } | null>(null);
   const [isAuthorizing, setIsAuthorizing] = useState(false);
+  const [isRevokingAgent, setIsRevokingAgent] = useState(false);
   const [composeAgent, setComposeAgent] = useState<Agent | null>(null);
 
   useEffect(() => {
@@ -178,12 +179,12 @@ export default function ExplorePage() {
     };
   }, []);
 
-  const handleAuthorizeCapabilities = async (agentId: number, capabilities: string[]) => {
-    const selectedCapabilities = capabilities
-      .map((capability) => capability.trim())
-      .filter(Boolean);
+  const handleAuthorizeCapabilities = async (agentId: number, skillIds: number[]) => {
+    const selectedSkillIds = skillIds
+      .map((skillId) => Number(skillId))
+      .filter((skillId) => Number.isInteger(skillId));
 
-    if (selectedCapabilities.length === 0) {
+    if (selectedSkillIds.length === 0) {
       toast.error("Select at least one capability to authorize.");
       return;
     }
@@ -191,9 +192,9 @@ export default function ExplorePage() {
     setIsAuthorizing(true);
 
     try {
-      const { hash } = await authorizeAgentCapabilities(agentId, selectedCapabilities);
+      const { hash } = await authorizeAgentCapabilities(agentId, selectedSkillIds);
       toast.success("Authorization submitted", {
-        description: `Authorized ${selectedCapabilities.length} capabilities. Tx: ${hash.slice(0, 10)}...`,
+        description: `Authorized ${selectedSkillIds.length} capabilities. Tx: ${hash.slice(0, 10)}...`,
       });
     } catch (error) {
       toast.error("Authorization failed", {
@@ -201,6 +202,24 @@ export default function ExplorePage() {
       });
     } finally {
       setIsAuthorizing(false);
+    }
+  };
+
+  const handleRevokeAgent = async (agentId: number) => {
+    setIsRevokingAgent(true);
+
+    try {
+      const { hash } = await revokeRegisteredAgent(agentId);
+      toast.success("Revocation submitted", {
+        description: `Agent #${agentId} revoke tx: ${hash.slice(0, 10)}...`,
+      });
+      setDetailsAgent(null);
+    } catch (error) {
+      toast.error("Revocation failed", {
+        description: error instanceof Error ? error.message : "Unable to revoke agent",
+      });
+    } finally {
+      setIsRevokingAgent(false);
     }
   };
 
@@ -368,6 +387,7 @@ export default function ExplorePage() {
     const onChainAgent = blockchainAgentsById.get(agent.agentId);
     const source = onChainAgent ?? agent;
     const capabilities = (source.capabilities.length ? source.capabilities : agent.capabilities).map((capability) => ({
+      skillId: capability.skillId,
       name: capability.name,
       active: capability.active,
     }));
@@ -563,8 +583,10 @@ export default function ExplorePage() {
         <AgentDetailsModal
           agent={detailsAgent}
           isAuthorizing={isAuthorizing}
+          isRevoking={isRevokingAgent}
           onAuthorizeSelectedCapabilities={(capabilities) => handleAuthorizeCapabilities(detailsAgent.rawAgentId, capabilities)}
           onAuthorizeAllCapabilities={(capabilities) => handleAuthorizeCapabilities(detailsAgent.rawAgentId, capabilities)}
+          onRevokeAgent={() => handleRevokeAgent(detailsAgent.rawAgentId)}
           onClose={() => setDetailsAgent(null)}
         />
       )}
@@ -575,6 +597,9 @@ export default function ExplorePage() {
           agentName={composeAgent.name}
           agentInitials={composeAgent.initials}
           capabilities={composeAgent.capabilities.map((capability) => capability.name)}
+          requiredAuthorizationSkillIds={composeAgent.capabilities
+            .filter((capability) => capability.requiresUserAuthorization && capability.skillId !== undefined)
+            .map((capability) => capability.skillId as number)}
           onClose={() => setComposeAgent(null)}
         />
       )}

@@ -35,7 +35,7 @@ export default function HomePage() {
               <span className="text-transparent bg-clip-text bg-gradient-to-r from-trust-accent-blue via-[#00ffd5] to-trust-accent-purple">AI Agents</span>
             </h1>
             <p className="text-xl md:text-2xl font-medium text-slate-400 max-w-3xl leading-relaxed mt-4">
-              AgentTrust enables organizations to launch AI-driven workflows with measurable accountability. Every agent action is backed by execution evidence, validator review, and continuously updated trust signals.
+            A decentralized verification network for the autonomous economy. Validating agent behavior through staking, validator consensus, and execution proofs.
 
             </p>
             <div className="flex flex-wrap items-center justify-center gap-6 mt-6">
@@ -55,14 +55,14 @@ export default function HomePage() {
         <div className="absolute inset-0 bg-neural-grid opacity-[0.035] pointer-events-none" />
         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full h-px bg-gradient-to-r from-transparent via-trust-accent-blue/50 to-transparent" />
         <div className="max-w-7xl mx-auto relative z-10">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-16 lg:gap-24 items-start">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-16 lg:gap-24 items-end">
             <div className="space-y-8 lg:sticky lg:top-[120px] px-0 py-0">
               <div className="text-trust-accent-purple font-black tracking-widest uppercase text-2xl md:text-3xl">The Challenge</div>
               <h2 className="text-[48px] md:text-[64px] font-bold text-white leading-[1.1]">
                 The Trust Gap in <br /><span className="text-transparent bg-clip-text bg-gradient-to-r from-trust-accent-purple to-trust-accent-blue">AI Agents</span>
               </h2>
               <p className="text-slate-300 text-[20px] font-medium leading-relaxed">
-                Autonomous agents now execute payments, negotiate APIs, and automate critical decisions at machine speed. Without verifiable oversight, teams cannot confidently rely on them in production.
+              AI agents are becoming autonomous systems capable of trading assets, analyzing sensitive data, and performing complex tasks across the web.
               </p>
               <div className="p-8 rounded-2xl bg-trust-accent-purple/5 border-2 border-trust-accent-purple/20 relative group overflow-hidden">
                 <div className="absolute inset-0 bg-trust-accent-purple/5 blur-2xl opacity-50 group-hover:opacity-100 transition-opacity" />
@@ -77,10 +77,10 @@ export default function HomePage() {
             </div>
             {/* Flow Diagram */}
             <div className="flex justify-center w-full">
-              <div className="execution-flow-container p-8 rounded-[2rem] w-full max-w-[540px] relative px-[16px] py-[16px]">
+              <div className="execution-flow-container p-8 rounded-[2rem] w-full max-w-[540px] relative px-[16px] py-5">
                 <div className="flex flex-col items-center">
                   {/* User Intent */}
-                  <div className="flow-glass-card w-full border-trust-accent-blue/20 bg-trust-accent-blue/5 rounded-full">
+                  <div className="flow-glass-card max-h-[85px] w-full border-trust-accent-blue/20 bg-trust-accent-blue/5 rounded-full">
                     <div className="flex items-center w-full gap-[20px]">
                       <div className="size-14 rounded-xl bg-trust-accent-blue/10 flex items-center justify-center border border-trust-accent-blue/30 shadow-[0_0_15px_rgba(43,140,238,0.2)] flex-shrink-0">
                         <span className="material-symbols-outlined text-2xl text-trust-accent-blue">person</span>
@@ -97,7 +97,7 @@ export default function HomePage() {
                     <div className="flow-particle-v text-trust-accent-blue" style={{ animationDelay: "0s" }} />
                   </div>
                   {/* User Cannot Trust */}
-                  <div className="flow-glass-card w-full border-yellow-500/30 bg-yellow-500/5 animate-pulse-warning-yellow rounded-full">
+                  <div className="flow-glass-card max-h-[85px] w-full border-yellow-500/30 bg-yellow-500/5 animate-pulse-warning-yellow rounded-full">
                     <div className="flex items-center gap-5 w-full">
                       <div className="size-14 rounded-xl bg-yellow-500/10 border border-yellow-500/40 flex items-center justify-center flex-shrink-0">
                         <span className="material-symbols-outlined text-2xl text-yellow-500">privacy_tip</span>
@@ -115,7 +115,7 @@ export default function HomePage() {
                     <div className="flow-particle-v text-trust-accent-purple" style={{ animationDelay: "0.4s" }} />
                   </div>
                   {/* Autonomous Agent */}
-                  <div className="flow-glass-card w-full border-trust-accent-purple/30 bg-trust-accent-purple/5 rounded-full">
+                  <div className="flow-glass-card max-h-[85px] w-full border-trust-accent-purple/30 bg-trust-accent-purple/5 rounded-full">
                     <div className="flex items-center gap-5 w-full">
                       <div className="size-14 rounded-xl bg-gradient-to-br from-trust-accent-purple to-trust-accent-blue flex items-center justify-center shadow-lg shadow-trust-accent-purple/30 animate-pulse-agent flex-shrink-0">
                         <span className="material-symbols-outlined text-2xl text-white">smart_toy</span>
@@ -130,7 +130,7 @@ export default function HomePage() {
                     <div className="flow-particle-v text-red-500" style={{ animationDelay: "0.8s" }} />
                   </div>
                   {/* Unverified */}
-                  <div className="flow-glass-card w-full border-red-500/40 bg-red-950/20 animate-pulse-warning rounded-full">
+                  <div className="flow-glass-card max-h-[85px] w-full border-red-500/40 bg-red-950/20 animate-pulse-warning rounded-full">
                     <div className="flex items-center gap-5 w-full">
                       <div className="size-14 rounded-xl bg-red-500/10 border border-red-500/40 flex items-center justify-center flex-shrink-0">
                         <span className="material-symbols-outlined text-2xl text-red-500">report</span>
@@ -148,7 +148,7 @@ export default function HomePage() {
                     <div className="flow-particle-v text-red-500" style={{ animationDelay: "1.2s" }} />
                   </div>
                   {/* Malicious */}
-                  <div className="flow-glass-card w-full border-red-500/30 bg-red-950/10 rounded-full">
+                  <div className="flow-glass-card max-h-[85px] w-full border-red-500/30 bg-red-950/10 rounded-full">
                     <div className="flex items-center gap-5 w-full">
                       <div className="size-14 rounded-xl bg-red-500/5 border border-red-500/20 flex items-center justify-center flex-shrink-0">
                         <span className="material-symbols-outlined text-2xl text-red-500/70">dangerous</span>

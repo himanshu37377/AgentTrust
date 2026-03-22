@@ -6,23 +6,27 @@ interface AgentDetails {
   description: string;
   securityTier: string;
   riskColor: string;
-  capabilities: { name: string; active: boolean }[];
+  capabilities: { skillId?: number; name: string; active: boolean }[];
   authorizedCount: number;
 }
 
 interface AgentDetailsModalProps {
   agent: AgentDetails;
   isAuthorizing?: boolean;
-  onAuthorizeSelectedCapabilities?: (capabilities: string[]) => Promise<void> | void;
-  onAuthorizeAllCapabilities?: (capabilities: string[]) => Promise<void> | void;
+  isRevoking?: boolean;
+  onAuthorizeSelectedCapabilities?: (skillIds: number[]) => Promise<void> | void;
+  onAuthorizeAllCapabilities?: (skillIds: number[]) => Promise<void> | void;
+  onRevokeAgent?: () => Promise<void> | void;
   onClose: () => void;
 }
 
 export default function AgentDetailsModal({
   agent,
   isAuthorizing = false,
+  isRevoking = false,
   onAuthorizeSelectedCapabilities,
   onAuthorizeAllCapabilities,
+  onRevokeAgent,
   onClose,
 }: AgentDetailsModalProps) {
   const [capabilities, setCapabilities] = useState(agent.capabilities);
@@ -102,7 +106,12 @@ export default function AgentDetailsModal({
                   className="w-full h-[42px] text-white text-sm font-semibold rounded-lg flex items-center justify-center gap-2 hover:opacity-90 transition-opacity disabled:opacity-60 disabled:cursor-not-allowed"
                   style={{ background: "linear-gradient(90deg, #4f46e5 0%, #9333ea 100%)" }}
                   disabled={isAuthorizing}
-                  onClick={() => onAuthorizeSelectedCapabilities?.(capabilities.filter((capability) => capability.active).map((capability) => capability.name))}
+                  onClick={() =>
+                    onAuthorizeSelectedCapabilities?.(
+                      capabilities
+                        .filter((capability) => capability.active && capability.skillId !== undefined)
+                        .map((capability) => capability.skillId as number),
+                    )}
                 >
                   {isAuthorizing ? "Authorizing..." : "Authorize Selected Capabilities"}
                 </button>
@@ -151,18 +160,32 @@ export default function AgentDetailsModal({
         </main>
 
         {/* Footer */}
-        <footer className="p-6 bg-white/5 flex justify-end gap-3" style={{ borderTop: "1px solid rgba(120, 140, 255, 0.18)" }}>
-          <button onClick={onClose} className="px-6 py-2 rounded-lg text-slate-400 text-sm font-medium hover:text-white hover:bg-white/5 transition-all">
-            Close
-          </button>
+        <footer className="p-6 bg-white/5 flex items-center justify-between gap-3" style={{ borderTop: "1px solid rgba(120, 140, 255, 0.18)" }}>
           <button
-            className="px-8 py-2 rounded-lg text-white text-sm font-semibold hover:opacity-90 transition-opacity disabled:opacity-60 disabled:cursor-not-allowed"
-            style={{ background: "linear-gradient(90deg, #4f46e5 0%, #9333ea 100%)", boxShadow: "0 10px 20px rgba(79, 70, 229, 0.2)" }}
-            disabled={isAuthorizing}
-            onClick={() => onAuthorizeAllCapabilities?.(capabilities.map((capability) => capability.name))}
+            className="px-5 py-2 rounded-lg text-red-200 text-sm font-semibold border border-red-400/25 bg-red-500/10 hover:bg-red-500/15 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+            disabled={isRevoking}
+            onClick={() => onRevokeAgent?.()}
           >
-            {isAuthorizing ? "Authorizing..." : "Authorize"}
+            {isRevoking ? "Revoking..." : "Revoke Agent"}
           </button>
+          <div className="flex items-center gap-3">
+            <button onClick={onClose} className="px-6 py-2 rounded-lg text-slate-400 text-sm font-medium hover:text-white hover:bg-white/5 transition-all">
+              Close
+            </button>
+            <button
+              className="px-8 py-2 rounded-lg text-white text-sm font-semibold hover:opacity-90 transition-opacity disabled:opacity-60 disabled:cursor-not-allowed"
+              style={{ background: "linear-gradient(90deg, #4f46e5 0%, #9333ea 100%)", boxShadow: "0 10px 20px rgba(79, 70, 229, 0.2)" }}
+              disabled={isAuthorizing}
+              onClick={() =>
+                onAuthorizeAllCapabilities?.(
+                  capabilities
+                    .filter((capability) => capability.skillId !== undefined)
+                    .map((capability) => capability.skillId as number),
+                )}
+            >
+              {isAuthorizing ? "Authorizing..." : "Authorize"}
+            </button>
+          </div>
         </footer>
       </section>
     </div>
