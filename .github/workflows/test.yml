@@ -42,5 +42,9 @@ jobs:
 
       - name: Run Forge tests
         run: |
-          forge test --offline -vvv
+          if find test -name '*.t.sol' -print -quit | grep -q .; then
+            forge test --offline -vvv
+          else
+            echo "No Foundry tests present; skipping forge test step."
+          fi
         id: test
