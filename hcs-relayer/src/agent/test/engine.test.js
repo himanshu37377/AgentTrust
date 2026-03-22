@@ -2,10 +2,11 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   UNDEFINED,
-  computeOutputHash,
+  computeBindingHash,
   evaluateExpression,
   executePrompt,
   generateOutput,
+  normalizeDeterministicOutput,
   parsePrompt
 } from "../engine.js";
 
@@ -13,6 +14,13 @@ test("parsePrompt extracts arithmetic expressions from natural language", () => 
   assert.deepEqual(parsePrompt("What's 1+3+4*5?"), {
     kind: "expression",
     expression: "1+3+4*5"
+  });
+});
+
+test("parsePrompt handles curly apostrophes in natural language prompts", () => {
+  assert.deepEqual(parsePrompt("What’s 1+1+3?"), {
+    kind: "expression",
+    expression: "1+1+3"
   });
 });
 
@@ -51,23 +59,32 @@ test("generateOutput preserves the exact input field", () => {
   });
 });
 
-test("computeOutputHash is stable for the same output", () => {
-  const output = generateOutput("sum of numbers from 1 to 10", 55);
+test("normalizeDeterministicOutput trims and stringifies the result", () => {
+  assert.equal(normalizeDeterministicOutput(" 55 "), "55");
+  assert.equal(normalizeDeterministicOutput(55), "55");
+});
+
+test("normalizeDeterministicOutput collapses whitespace and lowercases strings", () => {
+  assert.equal(normalizeDeterministicOutput("  HeLLo   WORLD  "), "hello world");
+});
+
+test("computeBindingHash is stable for the same input, output, and agent", () => {
   assert.equal(
-    computeOutputHash(output),
-    "0x171aba1128c2fa420bc4935c6542f705f6ce635928e0b5f21b4b474b73966003"
+    computeBindingHash("sum of numbers from 1 to 10", "55", 1),
+    "0xced475eba944da6b046d6e2e63dc0be29fd3a553d06e6ebe75b83d939c1f4b48"
   );
 });
 
-test("executePrompt returns both output and outputHash", () => {
-  const execution = executePrompt("sum of numbers from 1 to 10");
+test("executePrompt returns output, normalizedOutput, and executionCommitment", () => {
+  const execution = executePrompt("sum of numbers from 1 to 10", 1);
 
   assert.deepEqual(execution.output, {
     input: "sum of numbers from 1 to 10",
     result: 55
   });
+  assert.equal(execution.normalizedOutput, "55");
   assert.equal(
-    execution.outputHash,
-    "0x171aba1128c2fa420bc4935c6542f705f6ce635928e0b5f21b4b474b73966003"
+    execution.executionCommitment,
+    "0xced475eba944da6b046d6e2e63dc0be29fd3a553d06e6ebe75b83d939c1f4b48"
   );
 });

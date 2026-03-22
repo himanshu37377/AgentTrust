@@ -15,11 +15,11 @@ if (!fs.existsSync(configPath)) {
 
 const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
 const validationRegistryAbi = [
-  "event ExecutionSubmitted(uint256 indexed executionId,uint256 indexed agentId,bytes32 reasoningHash,bytes32 outputHash,bytes32 executionHash,bool isDeterministic)",
+  "event ExecutionSubmitted(uint256 indexed executionId,uint256 indexed agentId,uint256 parentExecutionId,uint256 callerAgentId,bool involvesExternalCall,string externalService)",
   "event VoteSubmitted(uint256 indexed executionId,address indexed validator,bool approve)",
   "event ExecutionFinalized(uint256 indexed executionId,bool accepted,uint256 approvals,uint256 rejections)",
-  "event ValidatorRegistered(address indexed validator,uint256 stakedAmount)",
-  "function executions(uint256) view returns (uint256 agentId, bytes32 reasoningHash, bytes32 outputHash, bytes32 executionHash, bool isDeterministic, uint256 approvals, uint256 rejections, bool finalized, bool accepted, uint256 createdAt)"
+  "event ValidatorRegistered(address indexed validator,uint256 indexed validatorId,uint256 stakedAmount)",
+  "function getExecution(uint256 executionId) view returns (tuple(uint256 executionId,uint256 agentId,uint256 parentExecutionId,uint256 callerAgentId,bool involvesExternalCall,string externalService,bytes32 reasoningHash,bytes32 executionCommitment,bytes32 executionHash,bool isDeterministic,uint256 approvals,uint256 rejections,bool finalized,bool accepted,uint256 createdAt))"
 ];
 const agentRegistryAbi = [
   "event AgentRegistered(uint256 indexed agentId,address indexed owner,uint8 riskLevel,bool isDeterministic,string metadataURI)",
@@ -70,26 +70,31 @@ validationRegistry.on(
   async (
     executionId,
     agentId,
-    reasoningHash,
-    outputHash,
-    executionHash,
-    isDeterministic,
+    parentExecutionId,
+    callerAgentId,
+    involvesExternalCall,
+    externalService,
     evt
   ) => {
+  const execution = await validationRegistry.getExecution(executionId);
   const payload = {
     ...basePayload(evt, "EXECUTION_SUBMITTED", config.evm.validationRegistryAddress),
     executionId: executionId.toString(),
     agentId: agentId.toString(),
-    reasoningHash,
-    outputHash,
-    executionHash,
-    isDeterministic
+    parentExecutionId: parentExecutionId.toString(),
+    callerAgentId: callerAgentId.toString(),
+    involvesExternalCall,
+    externalService,
+    reasoningHash: execution.reasoningHash,
+    executionCommitment: execution.executionCommitment,
+    executionHash: execution.executionHash,
+    isDeterministic: execution.isDeterministic
   };
   await publishToHCS(payload);
 });
 
 validationRegistry.on("VoteSubmitted", async (executionId, validator, approve, evt) => {
-  const execution = await validationRegistry.executions(executionId);
+  const execution = await validationRegistry.getExecution(executionId);
   const payload = {
     ...basePayload(evt, "VOTE_CAST", config.evm.validationRegistryAddress),
     executionId: executionId.toString(),
@@ -105,7 +110,7 @@ validationRegistry.on("VoteSubmitted", async (executionId, validator, approve, e
 });
 
 validationRegistry.on("ExecutionFinalized", async (executionId, accepted, approvals, rejections, evt) => {
-  const execution = await validationRegistry.executions(executionId);
+  const execution = await validationRegistry.getExecution(executionId);
   const consensusPayload = {
     ...basePayload(evt, "EXECUTION_REACHED_CONSENSUS", config.evm.validationRegistryAddress),
     executionId: executionId.toString(),
@@ -131,10 +136,11 @@ validationRegistry.on("ExecutionFinalized", async (executionId, accepted, approv
   await publishToHCS(finalizedPayload);
 });
 
-validationRegistry.on("ValidatorRegistered", async (validator, stakedAmount, evt) => {
+validationRegistry.on("ValidatorRegistered", async (validator, validatorId, stakedAmount, evt) => {
   const payload = {
     ...basePayload(evt, "VALIDATOR_REGISTERED", config.evm.validationRegistryAddress),
     validator,
+    validatorId: validatorId.toString(),
     stakedAmount: stakedAmount.toString()
   };
   await publishToHCS(payload);

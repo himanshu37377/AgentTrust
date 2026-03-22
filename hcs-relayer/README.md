@@ -41,9 +41,15 @@ This package also includes a minimal deterministic math agent for the AgentTrust
 ### Run the agent API
 
 1. Install deps: `npm install`
-2. Start the API: `npm run agent:start`
+2. Copy `.env.example` to `.env` and set `PINATA_JWT` plus `GEMINI_API_KEY`
+3. Start the API: `npm run agent:start`
 
-The server exposes `POST /agent/execute`.
+The server exposes:
+
+- `POST /agent/execute`
+- `POST /api/verify`
+- `POST /metadata/upload`
+- `POST /upload-metadata` (compatibility alias)
 
 Request:
 
@@ -59,7 +65,46 @@ Response:
 {
   "input": "sum of numbers from 1 to 10",
   "result": 55,
-  "outputHash": "0x171aba1128c2fa420bc4935c6542f705f6ce635928e0b5f21b4b474b73966003"
+  "normalizedOutput": "55",
+  "executionCommitment": "0xced475eba944da6b046d6e2e63dc0be29fd3a553d06e6ebe75b83d939c1f4b48",
+}
+```
+
+Verifier request:
+
+```json
+{
+  "input": "sum of numbers from 1 to 10",
+  "agentId": 1
+}
+```
+
+Verifier response:
+
+```json
+{
+  "output": "55",
+  "expectedHash": "0xced475eba944da6b046d6e2e63dc0be29fd3a553d06e6ebe75b83d939c1f4b48",
+  "model": "Verifier: Gemini 2.5 Flash (Deterministic Mode)"
+}
+```
+
+Metadata upload request:
+
+```json
+{
+  "metadata": {
+    "name": "Example Agent"
+  }
+}
+```
+
+Metadata upload response:
+
+```json
+{
+  "cid": "bafy...",
+  "metadataURI": "ipfs://bafy..."
 }
 ```
 
@@ -72,10 +117,13 @@ Response:
 ### Determinism notes
 
 - The JSON output always keeps `input` before `result`.
-- `input` is the exact original prompt.
+- `input` is hashed exactly as received.
 - Arithmetic is evaluated with exact rational math instead of unsafe `eval`.
 - Division by zero returns the fixed result `UNDEFINED`.
-- The output hash is `keccak256(JSON.stringify(output))`.
+- Deterministic execution commitments use `keccak256(abi.encode(input, normalizedOutput, agentId))`.
+- `normalizedOutput` trims whitespace, collapses repeated whitespace, and lowercases before hashing.
+- `/api/verify` uses Gemini only.
+- The verifier uses `temperature: 0` and a strict plain-string response rule.
 
 ### Tests
 

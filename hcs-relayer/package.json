@@ -4,9 +4,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "node src/index.js",
-    "agent:start": "node src/agent/server.js",
-    "agent:test": "node --test src/agent/test/*.test.js"
+    "start": "node --env-file-if-exists=.env src/index.js",
+    "agent:start": "node --env-file-if-exists=.env src/agent/server.js",
+    "agent:test": "node --test src/agent/test/*.test.js",
+    "topic": "node --env-file-if-exists=.env src/topic-admin.js"
   },
   "dependencies": {
     "@hashgraph/sdk": "^2.66.0",

@@ -13,7 +13,7 @@
         "executionId",
         "agentId",
         "reasoningHash",
-        "outputHash",
+        "executionCommitment",
         "executionHash",
         "isDeterministic"
       ]
@@ -83,6 +83,7 @@
         "logIndex",
         "blockNumber",
         "validator",
+        "validatorId",
         "stakedAmount"
       ]
     },

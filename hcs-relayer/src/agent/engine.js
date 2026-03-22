@@ -1,7 +1,8 @@
-import { keccak256, toUtf8Bytes } from "ethers";
+import { AbiCoder, keccak256, toUtf8Bytes } from "ethers";
 
 const UNDEFINED = "UNDEFINED";
 const MAX_SAFE_BIGINT = BigInt(Number.MAX_SAFE_INTEGER);
+const abiCoder = AbiCoder.defaultAbiCoder();
 
 function gcd(a, b) {
   let x = a < 0n ? -a : a;
@@ -266,7 +267,13 @@ function computeRangeSum(start, end) {
 }
 
 export function parsePrompt(prompt) {
-  const rangeMatch = prompt.match(/sum of numbers from\s*(-?\d+)\s*to\s*(-?\d+)/i);
+  const sanitizedPrompt = prompt
+    .normalize("NFKC")
+    .replace(/[’‘`]/g, "'")
+    .replace(/[“”]/g, '"')
+    .trim();
+
+  const rangeMatch = sanitizedPrompt.match(/sum of numbers from\s*(-?\d+)\s*to\s*(-?\d+)/i);
   if (rangeMatch) {
     return {
       kind: "range",
@@ -275,7 +282,7 @@ export function parsePrompt(prompt) {
     };
   }
 
-  const expressionParts = prompt.match(/[0-9()+\-*/\s]+/g);
+  const expressionParts = sanitizedPrompt.match(/[0-9()+\-*/\s]+/g);
   if (!expressionParts) {
     return null;
   }
@@ -315,18 +322,56 @@ export function generateOutput(prompt, result) {
   };
 }
 
+export function generateReasoning(prompt, parsedPrompt, result) {
+  if (!parsedPrompt) {
+    return `Unable to confidently parse the prompt "${prompt}", so the agent returned ${String(result)}.`;
+  }
+
+  if (parsedPrompt.kind === "range") {
+    return `Detected an inclusive range-sum request from ${parsedPrompt.start.toString()} to ${parsedPrompt.end.toString()} and computed the final result as ${String(result)}.`;
+  }
+
+  return `Detected an arithmetic expression of ${parsedPrompt.expression} and evaluated it to ${String(result)}.`;
+}
+
+export function normalizeDeterministicOutput(result) {
+  if (typeof result === "string") {
+    return result.replace(/\s+/g, " ").trim().toLowerCase();
+  }
+
+  if (result === undefined) {
+    return "";
+  }
+
+  return JSON.stringify(result).replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+export function computeBindingHash(input, normalizedOutput, agentId) {
+  return keccak256(
+    abiCoder.encode(
+      ["string", "string", "uint256"],
+      [input, normalizedOutput, BigInt(agentId)]
+    )
+  );
+}
+
 export function computeOutputHash(output) {
   return keccak256(toUtf8Bytes(JSON.stringify(output)));
 }
 
-export function executePrompt(prompt) {
+export function executePrompt(prompt, agentId) {
   const parsedPrompt = parsePrompt(prompt);
   const result = evaluateExpression(parsedPrompt);
   const output = generateOutput(prompt, result);
+  const reasoning = generateReasoning(prompt, parsedPrompt, result);
+  const normalizedOutput = normalizeDeterministicOutput(result);
 
   return {
     output,
-    outputHash: computeOutputHash(output)
+    reasoning,
+    normalizedOutput,
+    executionCommitment:
+      agentId === undefined || agentId === null ? undefined : computeBindingHash(prompt, normalizedOutput, agentId)
   };
 }
 
