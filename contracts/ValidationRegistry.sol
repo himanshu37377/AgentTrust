@@ -11,6 +11,8 @@ interface IReputationRegistry {
 contract ValidationRegistry {
     using Address for address payable;
 
+    uint256 public constant TINYBAR_PER_HBAR = 100_000_000;
+
     struct Execution {
         uint256 executionId;
         uint256 agentId;
@@ -19,7 +21,7 @@ contract ValidationRegistry {
         bool involvesExternalCall;
         string externalService;
         bytes32 reasoningHash;
-        bytes32 outputHash;
+        bytes32 executionCommitment;
         bytes32 executionHash;
         bool isDeterministic;
         uint256 approvals;
@@ -30,11 +32,13 @@ contract ValidationRegistry {
     }
 
     struct ValidatorInfo {
+        uint256 validatorId;
         bool isRegistered;
         bool active;
         uint256 stakedAmount;
         uint256 validatorReputation;
         uint256 registeredAt;
+        uint256 accuracyScore;
     }
 
     struct ExecutionInput {
@@ -43,12 +47,15 @@ contract ValidationRegistry {
         uint256 callerAgentId;
         bool involvesExternalCall;
         string externalService;
-        bytes32 outputHash;
+        bytes32 executionCommitment;
         bytes32 reasoningHash;
         bool isDeterministic;
     }
 
     uint256 public constant BPS_BASE = 10_000;
+    uint256 public constant MAX_ACCURACY_SCORE = 100;
+    uint256 public constant CORRECT_VOTE_REWARD = 1;
+    uint256 public constant INCORRECT_VOTE_PENALTY = 2;
     uint256 public approvalThresholdBps = 6_600; // 66%
     uint256 public minVotesForFinalization = 3;
 
@@ -56,14 +63,17 @@ contract ValidationRegistry {
     address public agentRegistry;
     address public reputationRegistry;
 
-    // owner-configurable validator stake requirement (native token / hbar equivalent unit)
-    uint256 public validatorStakeRequirement = 100 ether;
+    // owner-configurable validator stake requirement stored in tinybar
+    uint256 public validatorStakeRequirement = 100 * TINYBAR_PER_HBAR;
 
     uint256 public executionCounter;
+    uint256 public nextValidatorId = 1;
 
     mapping(uint256 => Execution) private executions;
     mapping(bytes32 => uint256) public executionIdByHash;
     mapping(uint256 => mapping(address => bool)) public hasVoted;
+    mapping(uint256 => mapping(address => bool)) public validatorVotes;
+    mapping(uint256 => address[]) public executionVoters;
 
     mapping(address => ValidatorInfo) public validators;
 
@@ -83,7 +93,7 @@ contract ValidationRegistry {
     event AgentRegistryUpdated(address indexed agentRegistry);
     event ReputationRegistryUpdated(address indexed reputationRegistry);
     event ValidatorStakeRequirementUpdated(uint256 oldRequirement, uint256 newRequirement);
-    event ValidatorRegistered(address indexed validator, uint256 stakedAmount);
+    event ValidatorRegistered(address indexed validator, uint256 indexed validatorId, uint256 stakedAmount);
     event ValidatorStakeToppedUp(address indexed validator, uint256 amount, uint256 totalStake);
     event ValidatorUnregistered(address indexed validator, uint256 refundedAmount);
     event ValidatorReputationUpdated(address indexed validator, uint256 oldReputation, uint256 newReputation);
@@ -116,6 +126,14 @@ contract ValidationRegistry {
     }
 
     function setValidatorStakeRequirement(uint256 _newRequirement) external onlyOwner {
+        _setValidatorStakeRequirement(_newRequirement);
+    }
+
+    function setValidatorStakeRequirementInHbar(uint256 _newRequirementInHbar) external onlyOwner {
+        _setValidatorStakeRequirement(_newRequirementInHbar * TINYBAR_PER_HBAR);
+    }
+
+    function _setValidatorStakeRequirement(uint256 _newRequirement) internal {
         require(_newRequirement > 0, "Invalid stake requirement");
         uint256 oldRequirement = validatorStakeRequirement;
         validatorStakeRequirement = _newRequirement;
@@ -131,16 +149,23 @@ contract ValidationRegistry {
         ValidatorInfo storage validator = validators[msg.sender];
         require(!validator.isRegistered, "Already registered");
         require(msg.value >= validatorStakeRequirement, "Insufficient validator stake");
+        uint256 validatorId = validator.validatorId;
+        if (validatorId == 0) {
+            validatorId = nextValidatorId;
+            nextValidatorId += 1;
+        }
 
         validators[msg.sender] = ValidatorInfo({
+            validatorId: validatorId,
             isRegistered: true,
             active: true,
             stakedAmount: msg.value,
             validatorReputation: 1,
-            registeredAt: block.timestamp
+            registeredAt: block.timestamp,
+            accuracyScore: MAX_ACCURACY_SCORE
         });
 
-        emit ValidatorRegistered(msg.sender, msg.value);
+        emit ValidatorRegistered(msg.sender, validatorId, msg.value);
     }
 
     function topUpValidatorStake() external payable {
@@ -188,7 +213,7 @@ contract ValidationRegistry {
         bool involvesExternalCall,
         string calldata externalService,
         bytes32 reasoningHash,
-        bytes32 outputHash
+        bytes32 executionCommitment
     )
         public
         pure
@@ -202,7 +227,7 @@ contract ValidationRegistry {
                 involvesExternalCall,
                 externalService,
                 reasoningHash,
-                outputHash
+                executionCommitment
             )
         );
     }
@@ -213,7 +238,7 @@ contract ValidationRegistry {
         uint256 callerAgentId,
         bool involvesExternalCall,
         string calldata externalService,
-        bytes32 outputHash,
+        bytes32 executionCommitment,
         bytes32 reasoningHash,
         bool isDeterministic
     )
@@ -226,7 +251,7 @@ contract ValidationRegistry {
             callerAgentId: callerAgentId,
             involvesExternalCall: involvesExternalCall,
             externalService: externalService,
-            outputHash: outputHash,
+            executionCommitment: executionCommitment,
             reasoningHash: reasoningHash,
             isDeterministic: isDeterministic
         });
@@ -234,15 +259,14 @@ contract ValidationRegistry {
         return _submitExecution(input);
     }
 
-    function verifyDeterministicExecution(uint256 executionId, bytes32 expectedOutputHash) external {
+    function verifyDeterministicExecution(uint256 executionId, bytes32 expectedHash) external {
         Execution storage exec = executions[executionId];
 
         require(exec.executionHash != bytes32(0), "Execution not found");
         require(exec.isDeterministic, "Not deterministic");
         require(!exec.finalized, "Already finalized");
-        require(expectedOutputHash != bytes32(0), "Invalid expected output hash");
 
-        bool accepted = exec.outputHash == expectedOutputHash;
+        bool accepted = exec.executionCommitment == expectedHash;
         _finalize(executionId, accepted);
 
         emit DeterministicExecutionVerified(executionId, accepted);
@@ -258,6 +282,8 @@ contract ValidationRegistry {
         require(isValidator(msg.sender), "Not an active validator");
 
         hasVoted[executionId][msg.sender] = true;
+        validatorVotes[executionId][msg.sender] = approve;
+        executionVoters[executionId].push(msg.sender);
 
         if (approve) {
             exec.approvals += 1;
@@ -302,10 +328,30 @@ contract ValidationRegistry {
 
         exec.finalized = true;
         exec.accepted = accepted;
+        _updateValidatorAccuracy(executionId, accepted);
 
         IReputationRegistry(reputationRegistry).updateTrustScore(exec.agentId, accepted);
 
         emit ExecutionFinalized(executionId, accepted, exec.approvals, exec.rejections);
+    }
+
+    function _updateValidatorAccuracy(uint256 executionId, bool accepted) internal {
+        address[] memory voters = executionVoters[executionId];
+
+        for (uint256 i = 0; i < voters.length; i++) {
+            address validatorAddress = voters[i];
+            ValidatorInfo storage validator = validators[validatorAddress];
+
+            if (validatorVotes[executionId][validatorAddress] == accepted) {
+                uint256 increased = validator.accuracyScore + CORRECT_VOTE_REWARD;
+                validator.accuracyScore =
+                    increased > MAX_ACCURACY_SCORE ? MAX_ACCURACY_SCORE : increased;
+            } else if (validator.accuracyScore <= INCORRECT_VOTE_PENALTY) {
+                validator.accuracyScore = 0;
+            } else {
+                validator.accuracyScore -= INCORRECT_VOTE_PENALTY;
+            }
+        }
     }
 
     function setValidatorReputation(address validatorAddress, uint256 newReputation) external onlyOwner {
@@ -345,9 +391,14 @@ contract ValidationRegistry {
         returns (uint256 executionId, bytes32 executionHash)
     {
         require(input.agentId > 0, "Invalid agent id");
-        require(input.reasoningHash != bytes32(0), "Invalid reasoning hash");
-        require(input.outputHash != bytes32(0), "Invalid output hash");
+        require(input.executionCommitment != bytes32(0), "Invalid execution commitment");
         require(agentRegistry != address(0), "Agent registry not set");
+
+        if (input.isDeterministic) {
+            require(input.reasoningHash == bytes32(0), "Reasoning hash unused");
+        } else {
+            require(input.reasoningHash != bytes32(0), "Invalid reasoning hash");
+        }
 
         IAgentRegistry.Agent memory agent = IAgentRegistry(agentRegistry).getAgent(input.agentId);
         require(agent.isRegistered, "Agent not registered");
@@ -369,10 +420,9 @@ contract ValidationRegistry {
                 input.involvesExternalCall,
                 input.externalService,
                 input.reasoningHash,
-                input.outputHash
+                input.executionCommitment
             )
         );
-        require(executionIdByHash[executionHash] == 0, "Execution already exists");
 
         executionId = ++executionCounter;
         executionIdByHash[executionHash] = executionId;
@@ -385,7 +435,7 @@ contract ValidationRegistry {
         exec.involvesExternalCall = input.involvesExternalCall;
         exec.externalService = input.externalService;
         exec.reasoningHash = input.reasoningHash;
-        exec.outputHash = input.outputHash;
+        exec.executionCommitment = input.executionCommitment;
         exec.executionHash = executionHash;
         exec.isDeterministic = input.isDeterministic;
         exec.createdAt = block.timestamp;

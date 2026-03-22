@@ -35,11 +35,9 @@ contract ReputationRegistry {
     event AgentRegistryUpdated(address indexed agentRegistry);
     event StakeSlashRequested(uint256 indexed agentId, uint256 penalty);
 
-    
-// X-----------------X-----------------X-----------------X-----------------X-----------------X-----------------X
-//                   MODIFIERS, CONSTRUCTOR, SETTER
-// X-----------------X-----------------X-----------------X-----------------X-----------------X-----------------X
-
+    // X-----------------X-----------------X-----------------X-----------------X-----------------X-----------------X
+    //                   MODIFIERS, CONSTRUCTOR, SETTER
+    // X-----------------X-----------------X-----------------X-----------------X-----------------X-----------------X
 
     modifier onlyOwner() {
         require(msg.sender == owner, "Only owner");
@@ -51,9 +49,8 @@ contract ReputationRegistry {
         _;
     }
 
-    constructor(address _agentRegistry) {
+    constructor() {
         owner = msg.sender;
-        agentRegistry = _agentRegistry;
     }
 
     function setValidationRegistry(address _validationRegistry) external onlyOwner {
@@ -68,10 +65,9 @@ contract ReputationRegistry {
         emit AgentRegistryUpdated(_agentRegistry);
     }
 
-// X-----------------X-----------------X-----------------X-----------------X-----------------X-----------------X
-//                   MAIN FUNCTIONS
-// X-----------------X-----------------X-----------------X-----------------X-----------------X-----------------X
-
+    // X-----------------X-----------------X-----------------X-----------------X-----------------X-----------------X
+    //                   MAIN FUNCTIONS
+    // X-----------------X-----------------X-----------------X-----------------X-----------------X-----------------X
 
     function submitReview(uint256 agentId, uint8 rating, string calldata feedback) external {
         require(agentId > 0, "Invalid agent id");
@@ -109,10 +105,9 @@ contract ReputationRegistry {
         return updated;
     }
 
-// X-----------------X-----------------X-----------------X-----------------X-----------------X-----------------X
-//              SLASHING TRUSTSCORE AND RATING (CALL FROM VALIDATION REGISTRY)
-// X-----------------X-----------------X-----------------X-----------------X-----------------X-----------------X
-
+    // X-----------------X-----------------X-----------------X-----------------X-----------------X-----------------X
+    //              SLASHING TRUSTSCORE AND RATING (CALL FROM VALIDATION REGISTRY)
+    // X-----------------X-----------------X-----------------X-----------------X-----------------X-----------------X
 
     function slashTrustScore(uint256 agentId, uint256 penalty) public onlyValidationRegistry returns (uint256) {
         require(agentId > 0, "Invalid agent id");
@@ -134,11 +129,10 @@ contract ReputationRegistry {
         emit RatingReduced(agentId, currentAvg, updatedAvg, reduction);
     }
 
-// X-----------------X-----------------X-----------------X-----------------X-----------------X-----------------X
-//                   EXTERNAL VIEW FUNCTIONS
-// X-----------------X-----------------X-----------------X-----------------X-----------------X-----------------X
+    // X-----------------X-----------------X-----------------X-----------------X-----------------X-----------------X
+    //                   EXTERNAL VIEW FUNCTIONS
+    // X-----------------X-----------------X-----------------X-----------------X-----------------X-----------------X
 
-    
     function getReviews(uint256 agentId) external view returns (Review[] memory) {
         return reviews[agentId];
     }

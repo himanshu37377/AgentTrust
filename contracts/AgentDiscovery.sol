@@ -12,14 +12,14 @@ contract AgentDiscovery {
     address public reputationRegistry;
     uint256 public minTrustScore;
 
-    mapping(bytes32 => uint256[]) private capabilityAgents;
-    mapping(uint256 => mapping(bytes32 => bool)) public agentCapability;
+    mapping(uint32 => uint256[]) private capabilityAgents;
+    mapping(uint256 => mapping(uint32 => bool)) public agentCapability;
 
     event AgentRegistryUpdated(address indexed agentRegistry);
     event ReputationRegistryUpdated(address indexed reputationRegistry);
     event MinTrustScoreUpdated(uint256 minTrustScore);
-    event AgentCapabilityIndexed(uint256 indexed agentId, bytes32 indexed capabilityHash);
-    event AgentDiscovered(bytes32 indexed capabilityHash, uint256 indexed agentId);
+    event AgentCapabilityIndexed(uint256 indexed agentId, uint32 indexed skillId);
+    event AgentDiscovered(uint32 indexed skillId, uint256 indexed agentId);
 
     modifier onlyOwner() {
         require(msg.sender == owner, "Only owner");
@@ -47,24 +47,21 @@ contract AgentDiscovery {
         emit MinTrustScoreUpdated(_minTrustScore);
     }
 
-    function indexAgentCapability(uint256 agentId, string calldata capability) external {
-        bytes32 capabilityHash = keccak256(bytes(capability));
-        require(!agentCapability[agentId][capabilityHash], "Capability already indexed");
+    function indexAgentCapability(uint256 agentId, uint32 skillId) external {
+        require(!agentCapability[agentId][skillId], "Capability already indexed");
 
-        capabilityAgents[capabilityHash].push(agentId);
-        agentCapability[agentId][capabilityHash] = true;
+        capabilityAgents[skillId].push(agentId);
+        agentCapability[agentId][skillId] = true;
 
-        emit AgentCapabilityIndexed(agentId, capabilityHash);
+        emit AgentCapabilityIndexed(agentId, skillId);
     }
 
-    function findAgentsByCapability(string calldata capability) external view returns (uint256[] memory) {
-        bytes32 capabilityHash = keccak256(bytes(capability));
-        return _getFilteredAgents(capabilityHash);
+    function findAgentsByCapability(uint32 skillId) external view returns (uint256[] memory) {
+        return _getFilteredAgents(skillId);
     }
 
-    function getTopAgents(string calldata capability, uint256 limit) external view returns (uint256[] memory) {
-        bytes32 capabilityHash = keccak256(bytes(capability));
-        uint256[] memory filtered = _getFilteredAgents(capabilityHash);
+    function getTopAgents(uint32 skillId, uint256 limit) external view returns (uint256[] memory) {
+        uint256[] memory filtered = _getFilteredAgents(skillId);
         uint256 resultSize = limit > filtered.length ? filtered.length : limit;
         if (resultSize > MAX_RESULTS) {
             resultSize = MAX_RESULTS;
@@ -100,12 +97,11 @@ contract AgentDiscovery {
         return topAgents;
     }
 
-    function composeAgentPipeline(string[] calldata capabilities) external view returns (uint256[] memory) {
-        uint256[] memory pipelineAgents = new uint256[](capabilities.length);
+    function composeAgentPipeline(uint32[] calldata skillIds) external view returns (uint256[] memory) {
+        uint256[] memory pipelineAgents = new uint256[](skillIds.length);
 
-        for (uint256 i = 0; i < capabilities.length; i++) {
-            bytes32 capabilityHash = keccak256(bytes(capabilities[i]));
-            uint256[] memory filtered = _getFilteredAgents(capabilityHash);
+        for (uint256 i = 0; i < skillIds.length; i++) {
+            uint256[] memory filtered = _getFilteredAgents(skillIds[i]);
             if (filtered.length == 0) {
                 continue;
             }
@@ -127,15 +123,15 @@ contract AgentDiscovery {
         return pipelineAgents;
     }
 
-    function _getFilteredAgents(bytes32 capabilityHash) internal view returns (uint256[] memory) {
-        uint256[] memory indexedAgents = capabilityAgents[capabilityHash];
+    function _getFilteredAgents(uint32 skillId) internal view returns (uint256[] memory) {
+        uint256[] memory indexedAgents = capabilityAgents[skillId];
         uint256[] memory temp = new uint256[](indexedAgents.length);
         uint256 count = 0;
 
         for (uint256 i = 0; i < indexedAgents.length; i++) {
             uint256 agentId = indexedAgents[i];
 
-            if (!_isEligibleAgent(agentId, capabilityHash)) {
+            if (!_isEligibleAgent(agentId, skillId)) {
                 continue;
             }
 
@@ -151,7 +147,7 @@ contract AgentDiscovery {
         return filtered;
     }
 
-    function _isEligibleAgent(uint256 agentId, bytes32 capabilityHash) internal view returns (bool) {
+    function _isEligibleAgent(uint256 agentId, uint32 skillId) internal view returns (bool) {
         IAgentRegistry.Agent memory agent;
         try IAgentRegistry(agentRegistry).getAgent(agentId) returns (IAgentRegistry.Agent memory fetchedAgent) {
             agent = fetchedAgent;
@@ -163,18 +159,18 @@ contract AgentDiscovery {
             return false;
         }
 
-        if (!_hasActiveCapability(agentId, capabilityHash)) {
+        if (!_hasActiveCapability(agentId, skillId)) {
             return false;
         }
 
         return IReputationRegistry(reputationRegistry).getTrustScore(agentId) > minTrustScore;
     }
 
-    function _hasActiveCapability(uint256 agentId, bytes32 capabilityHash) internal view returns (bool) {
+    function _hasActiveCapability(uint256 agentId, uint32 skillId) internal view returns (bool) {
         IAgentRegistry.Capability[] memory capabilities = IAgentRegistry(agentRegistry).getCapabilities(agentId);
 
         for (uint256 i = 0; i < capabilities.length; i++) {
-            if (keccak256(bytes(capabilities[i].name)) == capabilityHash && capabilities[i].active) {
+            if (capabilities[i].skillId == skillId && capabilities[i].active) {
                 return true;
             }
         }

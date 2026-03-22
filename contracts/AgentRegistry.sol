@@ -6,6 +6,7 @@ import "./IAgentNFT.sol";
 
 contract AgentRegistry {
     struct Capability {
+        uint32 skillId;
         string name;
         string description;
         string expectedReasoning;
@@ -16,6 +17,7 @@ contract AgentRegistry {
     }
 
     struct CapabilityInput {
+        uint32 skillId;
         string name;
         string description;
         string expectedReasoning;
@@ -61,45 +63,65 @@ contract AgentRegistry {
         uint256 indexed agentId, address indexed owner, uint8 riskLevel, bool isDeterministic, string metadataURI
     );
     event AgentRevoked(uint256 indexed agentId);
-    event CapabilityChanged(uint256 indexed agentId, string capability, uint256 riskLevel);
+    event CapabilityChanged(uint256 indexed agentId, uint32 skillId, string capability, uint256 riskLevel);
     event ReputationRegistryUpdated(address indexed reputationRegistry);
     event StakingManagerUpdated(address indexed stakingManager);
     event AgentNFTUpdated(address indexed agentNFT);
     event TrustScoreUpdated(uint256 indexed agentId, uint256 oldScore, uint256 newScore);
+
+    error OnlyOwner();
+    error OnlyReputationRegistry();
+    error InvalidReputationRegistry();
+    error InvalidStakingManager();
+    error InvalidAgentNFT();
+    error StakingManagerNotSet();
+    error AgentNFTNotSet();
+    error InvalidRiskLevel();
+    error InvalidStakeAmount();
+    error InvalidAgentId();
+    error AgentIdAlreadyUsed();
+    error NotRegistered();
+    error AgentAlreadyRevoked();
+    error Unauthorized();
+    error InvalidCapabilityIndex();
+    error AlreadyRevoked();
+    error RevocationCriteriaNotMet();
+    error NoCapabilityFound();
+    error TrustScoreOutOfRange();
+    error SkillIdReserved();
 
     // X-----------------X-----------------X-----------------X-----------------X-----------------X-----------------X
     //                   MODIFIERS, CONSTRUCTOR, SETTER
     // X-----------------X-----------------X-----------------X-----------------X-----------------X-----------------X
 
     modifier onlyOwner() {
-        require(msg.sender == owner, "Only owner");
+        if (msg.sender != owner) revert OnlyOwner();
         _;
     }
 
     modifier onlyReputationRegistry() {
-        require(msg.sender == reputationRegistry, "Only reputation registry");
+        if (msg.sender != reputationRegistry) revert OnlyReputationRegistry();
         _;
     }
 
-    constructor(address _stakingManager) {
+    constructor() {
         owner = msg.sender;
-        stakingManager = _stakingManager;
     }
 
     function setReputationRegistry(address _reputationRegistry) external onlyOwner {
-        require(_reputationRegistry != address(0), "Invalid reputation registry");
+        if (_reputationRegistry == address(0)) revert InvalidReputationRegistry();
         reputationRegistry = _reputationRegistry;
         emit ReputationRegistryUpdated(_reputationRegistry);
     }
 
     function setStakingManager(address _stakingManager) external onlyOwner {
-        require(_stakingManager != address(0), "Invalid staking manager");
+        if (_stakingManager == address(0)) revert InvalidStakingManager();
         stakingManager = _stakingManager;
         emit StakingManagerUpdated(_stakingManager);
     }
 
     function setAgentNFT(address _agentNFT) external onlyOwner {
-        require(_agentNFT != address(0), "Invalid agent NFT");
+        if (_agentNFT == address(0)) revert InvalidAgentNFT();
         agentNFT = _agentNFT;
         emit AgentNFTUpdated(_agentNFT);
     }
@@ -114,16 +136,16 @@ contract AgentRegistry {
         uint8 riskLevel,
         bool isDeterministic
     ) external payable {
-        require(stakingManager != address(0), "Staking manager not set");
-        require(agentNFT != address(0), "Agent NFT not set");
-        require(riskLevel >= MIN_RISK_LEVEL && riskLevel <= MAX_RISK_LEVEL, "Invalid risk level");
+        if (stakingManager == address(0)) revert StakingManagerNotSet();
+        if (agentNFT == address(0)) revert AgentNFTNotSet();
+        if (riskLevel < MIN_RISK_LEVEL || riskLevel > MAX_RISK_LEVEL) revert InvalidRiskLevel();
 
         uint256 stakeRequired = calculateStakeAmount(riskLevel);
-        require(msg.value == stakeRequired, "Invalid stake amount");
+        if (msg.value != stakeRequired) revert InvalidStakeAmount();
 
         uint256 agentId = IAgentNFT(agentNFT).safeMint(msg.sender, metadataURI);
-        require(agentId > 0, "Invalid agent id");
-        require(!agents[agentId].isRegistered, "Agent id already used");
+        if (agentId == 0) revert InvalidAgentId();
+        if (agents[agentId].isRegistered) revert AgentIdAlreadyUsed();
         nextAgentId = agentId;
 
         Agent storage agent = agents[agentId];
@@ -142,15 +164,15 @@ contract AgentRegistry {
 
         ownerToAgentId[msg.sender] = agentId;
 
-        IStakingMananger(stakingManager).stakeForAgent{value: msg.value}(agentId, msg.sender, riskLevel);
+        IStakingManager(stakingManager).stakeForAgent{value: msg.value}(agentId, msg.sender, riskLevel);
 
-        agents[agentId].stakeAmount = IStakingMananger(stakingManager).getStakeAmount(agentId);
+        agents[agentId].stakeAmount = IStakingManager(stakingManager).getStakeAmount(agentId);
 
         emit AgentRegistered(agentId, msg.sender, riskLevel, isDeterministic, metadataURI);
     }
 
     function calculateStakeAmount(uint8 riskLevel) public view returns (uint256) {
-        require(riskLevel >= MIN_RISK_LEVEL && riskLevel <= MAX_RISK_LEVEL, "Invalid risk level");
+        if (riskLevel < MIN_RISK_LEVEL || riskLevel > MAX_RISK_LEVEL) revert InvalidRiskLevel();
         return STAKE_TABLE[riskLevel];
     }
 
@@ -162,44 +184,43 @@ contract AgentRegistry {
     ) external {
         Agent storage agent = agents[agentId];
 
-        require(agent.isRegistered, "Not registered");
-        require(!agent.revoked, "Agent revoked");
-        require(agent.owner == msg.sender, "Unauthorized");
-        require(riskLevel >= MIN_RISK_LEVEL && riskLevel <= MAX_RISK_LEVEL, "Invalid risk level");
-        require(capabilityIndex < agentCapabilities[agentId].length, "Invalid capability index");
+        if (!agent.isRegistered) revert NotRegistered();
+        if (agent.revoked) revert AgentAlreadyRevoked();
+        if (agent.owner != msg.sender) revert Unauthorized();
+        if (riskLevel < MIN_RISK_LEVEL || riskLevel > MAX_RISK_LEVEL) revert InvalidRiskLevel();
+        if (capabilityIndex >= agentCapabilities[agentId].length) revert InvalidCapabilityIndex();
 
         agentCapabilities[agentId][capabilityIndex] = _buildCapability(capabilityInput, riskLevel);
 
-        emit CapabilityChanged(agentId, capabilityInput.name, riskLevel);
+        emit CapabilityChanged(agentId, capabilityInput.skillId, capabilityInput.name, riskLevel);
     }
 
     function addCapability(uint256 agentId, CapabilityInput calldata capabilityInput, uint8 riskLevel) external {
         Agent storage agent = agents[agentId];
 
-        require(agent.isRegistered, "Not registered");
-        require(!agent.revoked, "Agent revoked");
-        require(agent.owner == msg.sender, "Unauthorized");
-        require(riskLevel >= MIN_RISK_LEVEL && riskLevel <= MAX_RISK_LEVEL, "Invalid risk level");
-        require(bytes(capabilityInput.name).length > 0, "Capability name required");
+        if (!agent.isRegistered) revert NotRegistered();
+        if (agent.revoked) revert AgentAlreadyRevoked();
+        if (agent.owner != msg.sender) revert Unauthorized();
+        if (riskLevel < MIN_RISK_LEVEL || riskLevel > MAX_RISK_LEVEL) revert InvalidRiskLevel();
 
         agentCapabilities[agentId].push(_buildCapability(capabilityInput, riskLevel));
 
-        emit CapabilityChanged(agentId, capabilityInput.name, riskLevel);
+        emit CapabilityChanged(agentId, capabilityInput.skillId, capabilityInput.name, riskLevel);
     }
 
     function revokeAgent(uint256 agentId) external {
         Agent storage agent = agents[agentId];
 
-        require(stakingManager != address(0), "Staking manager not set");
-        require(agent.isRegistered, "Not registered");
-        require(!agent.revoked, "Already revoked");
+        if (stakingManager == address(0)) revert StakingManagerNotSet();
+        if (!agent.isRegistered) revert NotRegistered();
+        if (agent.revoked) revert AlreadyRevoked();
 
         bool trustBelow = agent.trustScore <= REVOKE_TRUST_THRESHOLD;
-        require(trustBelow, "Revocation criteria not met");
+        if (!trustBelow) revert RevocationCriteriaNotMet();
 
         agent.revoked = true;
 
-        IStakingMananger(stakingManager).liquidateAgent(agentId, msg.sender, BOUNTY_BPS);
+        IStakingManager(stakingManager).liquidateAgent(agentId, msg.sender, BOUNTY_BPS);
         IAgentNFT(agentNFT).revokeNFT(agentId, agent.owner);
         emit AgentRevoked(agentId);
     }
@@ -210,30 +231,48 @@ contract AgentRegistry {
 
     function getAgent(uint256 agentId) external view returns (Agent memory) {
         Agent memory agent = agents[agentId];
-        require(agent.isRegistered, "Not registered");
+        if (!agent.isRegistered) revert NotRegistered();
         return agent;
     }
 
     function getCapability(uint256 agentId) external view returns (Capability memory) {
-        require(agents[agentId].isRegistered, "Not registered");
-        require(agentCapabilities[agentId].length > 0, "No capability found");
+        if (!agents[agentId].isRegistered) revert NotRegistered();
+        if (agentCapabilities[agentId].length == 0) revert NoCapabilityFound();
         return agentCapabilities[agentId][0];
     }
 
     function getCapabilityAt(uint256 agentId, uint256 index) external view returns (Capability memory) {
-        require(agents[agentId].isRegistered, "Not registered");
-        require(index < agentCapabilities[agentId].length, "Invalid capability index");
+        if (!agents[agentId].isRegistered) revert NotRegistered();
+        if (index >= agentCapabilities[agentId].length) revert InvalidCapabilityIndex();
         return agentCapabilities[agentId][index];
     }
 
     function getCapabilities(uint256 agentId) external view returns (Capability[] memory) {
-        require(agents[agentId].isRegistered, "Not registered");
+        if (!agents[agentId].isRegistered) revert NotRegistered();
         return agentCapabilities[agentId];
     }
 
     function getCapabilityCount(uint256 agentId) external view returns (uint256) {
-        require(agents[agentId].isRegistered, "Not registered");
+        if (!agents[agentId].isRegistered) revert NotRegistered();
         return agentCapabilities[agentId].length;
+    }
+
+    function hasCapabilityId(uint256 agentId, uint32 skillId)
+        external
+        view
+        returns (bool exists, bool requiresUserAuthorization, bool isActive)
+    {
+        if (!agents[agentId].isRegistered) revert NotRegistered();
+
+        Capability[] storage capabilities = agentCapabilities[agentId];
+
+        for (uint256 i = 0; i < capabilities.length; i++) {
+            if (capabilities[i].skillId == skillId) {
+                return (true, capabilities[i].requiresUserAuthorization, capabilities[i].active);
+            }
+        }
+
+        return (false, false, false);
     }
 
     function hasCapability(uint256 agentId, string calldata capability)
@@ -241,7 +280,7 @@ contract AgentRegistry {
         view
         returns (bool exists, bool requiresUserAuthorization, bool isActive)
     {
-        require(agents[agentId].isRegistered, "Not registered");
+        if (!agents[agentId].isRegistered) revert NotRegistered();
 
         bytes32 capHash = keccak256(bytes(capability));
         Capability[] storage capabilities = agentCapabilities[agentId];
@@ -257,8 +296,8 @@ contract AgentRegistry {
 
     function setAgentTrustScore(uint256 agentId, uint256 newTrustScore) external onlyReputationRegistry {
         Agent storage agent = agents[agentId];
-        require(agent.isRegistered, "Not registered");
-        require(newTrustScore <= MAX_TRUST_SCORE, "Trust score out of range");
+        if (!agent.isRegistered) revert NotRegistered();
+        if (newTrustScore > MAX_TRUST_SCORE) revert TrustScoreOutOfRange();
 
         uint256 oldScore = agent.trustScore;
         agent.trustScore = newTrustScore;
@@ -268,13 +307,13 @@ contract AgentRegistry {
 
     function getAgentTrustScore(uint256 agentId) external view returns (uint256) {
         Agent memory agent = agents[agentId];
-        require(agent.isRegistered, "Not registered");
+        if (!agent.isRegistered) revert NotRegistered();
         return agent.trustScore;
     }
 
     function isAgentDeterministic(uint256 agentId) external view returns (bool) {
         Agent memory agent = agents[agentId];
-        require(agent.isRegistered, "Not registered");
+        if (!agent.isRegistered) revert NotRegistered();
         return agent.isDeterministic;
     }
 
@@ -283,7 +322,10 @@ contract AgentRegistry {
         pure
         returns (Capability memory)
     {
+        _validateSkillId(capabilityInput.skillId);
+
         return Capability({
+            skillId: capabilityInput.skillId,
             name: capabilityInput.name,
             description: capabilityInput.description,
             expectedReasoning: capabilityInput.expectedReasoning,
@@ -292,5 +334,9 @@ contract AgentRegistry {
             requiresUserAuthorization: riskLevel > 0,
             active: true
         });
+    }
+
+    function _validateSkillId(uint32 skillId) internal pure {
+        if (skillId > 39 && skillId < 100) revert SkillIdReserved();
     }
 }

@@ -3,6 +3,7 @@ pragma solidity ^0.8.20;
 
 interface IAgentRegistry {
     struct Capability {
+        uint32 skillId;
         string name;
         string description;
         string expectedReasoning;
@@ -30,6 +31,10 @@ interface IAgentRegistry {
     function getCapabilityAt(uint256 agentId, uint256 index) external view returns (Capability memory);
     function getCapabilities(uint256 agentId) external view returns (Capability[] memory);
     function getCapabilityCount(uint256 agentId) external view returns (uint256);
+    function hasCapabilityId(uint256 agentId, uint32 skillId)
+        external
+        view
+        returns (bool exists, bool requiresUserAuthorization, bool isActive);
     function hasCapability(uint256 agentId, string calldata capability)
         external
         view

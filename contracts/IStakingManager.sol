@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-interface IStakingMananger {
+interface IStakingManager {
     function stakeForAgent(uint256 agentId, address agentOwner, uint256 riskLevel) external payable;
 
     function liquidateAgent(uint256 agentId, address bonusReceiver, uint256 bountyBps)

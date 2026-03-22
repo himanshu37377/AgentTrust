@@ -4,10 +4,9 @@ pragma solidity ^0.8.20;
 import "./IAgentRegistry.sol";
 
 contract AuthorizationManager {
-    
     struct Permission {
         uint256 agentId;
-        string capability;
+        uint32 skillId;
         uint256 expiry;
     }
 
@@ -19,11 +18,10 @@ contract AuthorizationManager {
 
     mapping(address => Permission[]) public userPermissions;
 
-    event AgentAuthorized(address indexed user, uint256 indexed agentId, string capability);
+    event AgentAuthorized(address indexed user, uint256 indexed agentId, uint32 skillId);
+    event AgentAuthorizedBatch(address indexed user, uint256 indexed agentId, uint256 capabilityCount);
     event AuthorizationRevoked(address indexed user, uint256 indexed agentId);
     event AgentRegistryUpdated(address indexed agentRegistry);
-
-    
 // X-----------------X-----------------X-----------------X-----------------X-----------------X-----------------X
 //                   MODIFIERS, CONSTRUCTOR, SETTER
 // X-----------------X-----------------X-----------------X-----------------X-----------------X-----------------X
@@ -49,18 +47,31 @@ contract AuthorizationManager {
 // X-----------------X-----------------X-----------------X-----------------X-----------------X-----------------X
 
 
-    function authorizeAgent(uint256 agentId, string calldata capability) external {
+    function authorizeAgent(uint256 agentId, uint32[] calldata skillIds) external {
         require(agentRegistry != address(0), "Agent registry not set");
         require(agentId > 0, "Invalid agent id");
-        require(bytes(capability).length > 0, "Capability required");
+        require(skillIds.length > 0, "Capabilities required");
 
         IAgentRegistry.Agent memory agent = IAgentRegistry(agentRegistry).getAgent(agentId);
         require(!agent.revoked, "Agent revoked");
 
         uint256 finalExpiry = block.timestamp + DEFAULT_AUTH_DURATION;
-        _upsertPermission(msg.sender, agentId, capability, finalExpiry);
 
-        emit AgentAuthorized(msg.sender, agentId , capability);
+        for (uint256 i = 0; i < skillIds.length; i++) {
+            uint32 skillId = skillIds[i];
+            (bool exists, bool requiresUserAuthorization, bool isActive) = _getCapabilityDetails(agentId, skillId);
+            require(exists, "Capability missing");
+            require(isActive, "Capability inactive");
+
+            if (!requiresUserAuthorization) {
+                continue;
+            }
+
+            _upsertPermission(msg.sender, agentId, skillId, finalExpiry);
+            emit AgentAuthorized(msg.sender, agentId, skillId);
+        }
+
+        emit AgentAuthorizedBatch(msg.sender, agentId, skillIds.length);
     }
 
     function revokeAuthorization(uint256 agentId) external {
@@ -89,10 +100,9 @@ contract AuthorizationManager {
 // X-----------------X-----------------X-----------------X-----------------X-----------------X-----------------X
   
 
-    function checkPermission(address user, uint256 agentId, string calldata capability) external view returns (bool) {
+    function checkPermission(address user, uint256 agentId, uint32 skillId) external view returns (bool) {
         require(user != address(0), "Invalid user");
         require(agentId > 0, "Invalid agent id");
-        require(bytes(capability).length > 0, "Capability required");
 
         if (agentRegistry == address(0)) return false;
 
@@ -107,19 +117,14 @@ contract AuthorizationManager {
             return false;
         }
 
-        (bool exists, bool requiresUserAuthorization, bool isActive) = _getCapabilityDetails(agentId, capability);
+        (bool exists, bool requiresUserAuthorization, bool isActive) = _getCapabilityDetails(agentId, skillId);
         if (!exists || !isActive) return false;
         if (!requiresUserAuthorization) return true;
 
         Permission[] storage perms = userPermissions[user];
-        bytes32 capHash = keccak256(bytes(capability));
 
         for (uint256 i = 0; i < perms.length; i++) {
-            if (
-                perms[i].agentId == agentId
-                    && keccak256(bytes(perms[i].capability)) == capHash
-                    && perms[i].expiry >= block.timestamp
-            ) {
+            if (perms[i].agentId == agentId && perms[i].skillId == skillId && perms[i].expiry >= block.timestamp) {
                 return true;
             }
         }
@@ -127,25 +132,24 @@ contract AuthorizationManager {
         return false;
     }
 
-    function _upsertPermission(address user, uint256 agentId, string calldata capability, uint256 expiry) internal {
+    function _upsertPermission(address user, uint256 agentId, uint32 skillId, uint256 expiry) internal {
         Permission[] storage perms = userPermissions[user];
-        bytes32 capHash = keccak256(bytes(capability));
 
         for (uint256 i = 0; i < perms.length; i++) {
-            if (perms[i].agentId == agentId && keccak256(bytes(perms[i].capability)) == capHash) {
+            if (perms[i].agentId == agentId && perms[i].skillId == skillId) {
                 perms[i].expiry = expiry;
                 return;
             }
         }
 
-        perms.push(Permission({agentId: agentId, capability: capability, expiry: expiry}));
+        perms.push(Permission({agentId: agentId, skillId: skillId, expiry: expiry}));
     }
 
-    function _getCapabilityDetails(uint256 agentId, string calldata capability)
+    function _getCapabilityDetails(uint256 agentId, uint32 skillId)
         internal
         view
         returns (bool exists, bool requiresUserAuthorization, bool isActive)
     {
-        return IAgentRegistry(agentRegistry).hasCapability(agentId, capability);
+        return IAgentRegistry(agentRegistry).hasCapabilityId(agentId, skillId);
     }
 }

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.27;
+pragma solidity ^0.8.20;
 
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
@@ -34,10 +34,7 @@ contract AgentNFT is Ownable, HederaTokenService, KeyHelper, ExpiryHelper {
         _;
     }
 
-    constructor(address initialRegistry) Ownable(msg.sender) {
-        require(initialRegistry != address(0), "Invalid registry");
-        registry = initialRegistry;
-    }
+    constructor() Ownable(msg.sender) {}
 
     function setRegistry(address newRegistry) external onlyOwner {
         require(newRegistry != address(0), "Invalid registry");
@@ -46,11 +43,7 @@ contract AgentNFT is Ownable, HederaTokenService, KeyHelper, ExpiryHelper {
         emit RegistryUpdated(oldRegistry, newRegistry);
     }
 
-    function safeMint(address to, string calldata uri)
-        external
-        onlyRegistry
-        returns (uint256 tokenId)
-    {
+    function safeMint(address to, string calldata uri) external onlyRegistry returns (uint256 tokenId) {
         require(tokenAddress != address(0), "HTS: not created");
         require(to != address(0), "Invalid recipient");
         bytes memory metadata = bytes(uri);
@@ -105,8 +98,7 @@ contract AgentNFT is Ownable, HederaTokenService, KeyHelper, ExpiryHelper {
 
         address owner_ = IERC721(tokenAddress).ownerOf(tokenId);
         require(
-            msg.sender == owner_
-                || IERC721(tokenAddress).getApproved(tokenId) == msg.sender
+            msg.sender == owner_ || IERC721(tokenAddress).getApproved(tokenId) == msg.sender
                 || IERC721(tokenAddress).isApprovedForAll(owner_, msg.sender),
             "caller not owner nor approved"
         );
@@ -156,11 +148,7 @@ contract AgentNFT is Ownable, HederaTokenService, KeyHelper, ExpiryHelper {
         emit NFTMinted(to, tokenId, newTotalSupply);
     }
 
-    function _buildTokenKeys()
-        internal
-        view
-        returns (IHederaTokenService.TokenKey[] memory tokenKeys)
-    {
+    function _buildTokenKeys() internal view returns (IHederaTokenService.TokenKey[] memory tokenKeys) {
         tokenKeys = new IHederaTokenService.TokenKey[](3);
         tokenKeys[0] = getSingleKey(KeyType.ADMIN, KeyValueType.CONTRACT_ID, address(this));
         tokenKeys[1] = getSingleKey(KeyType.SUPPLY, KeyValueType.CONTRACT_ID, address(this));

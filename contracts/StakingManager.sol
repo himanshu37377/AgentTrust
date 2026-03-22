@@ -30,6 +30,21 @@ contract StakingManager {
     event AgentRegistryUpdated(address indexed agentRegistry);
     event MinTrustThresholdUpdated(uint256 threshold);
 
+    error OnlyOwner();
+    error OnlyAgentRegistry();
+    error InvalidAgentRegistry();
+    error InvalidThreshold();
+    error InvalidAgentId();
+    error InvalidOwner();
+    error StakeAlreadyActive();
+    error AgentRegistryNotSet();
+    error NoActiveStake();
+    error OnlyAgentOwner();
+    error RevokedAgentCannotUnstake();
+    error InvalidBonusReceiver();
+    error InvalidBountyBps();
+    error NoBalance();
+
 
 // X-----------------X-----------------X-----------------X-----------------X-----------------X-----------------X
 //                   MODIFIERS, CONSTRUCTOR, SETTER
@@ -37,12 +52,12 @@ contract StakingManager {
 
 
     modifier onlyOwner() {
-        require(msg.sender == owner, "Only owner");
+        if (msg.sender != owner) revert OnlyOwner();
         _;
     }
 
     modifier onlyAgentRegistry() {
-        require(msg.sender == agentRegistry, "Only agent registry");
+        if (msg.sender != agentRegistry) revert OnlyAgentRegistry();
         _;
     }
 
@@ -52,13 +67,13 @@ contract StakingManager {
     }
 
     function setAgentRegistry(address _agentRegistry) external onlyOwner {
-        require(_agentRegistry != address(0), "Invalid agent registry");
+        if (_agentRegistry == address(0)) revert InvalidAgentRegistry();
         agentRegistry = _agentRegistry;
         emit AgentRegistryUpdated(_agentRegistry);
     }
 
     function setMinTrustThreshold(uint256 _threshold) external onlyOwner {
-        require(_threshold <= TRUST_POINTS_BASE, "Invalid threshold");
+        if (_threshold > TRUST_POINTS_BASE) revert InvalidThreshold();
         minTrustThreshold = _threshold;
         emit MinTrustThresholdUpdated(_threshold);
     }
@@ -70,11 +85,11 @@ contract StakingManager {
 
     // Called by AgentRegistry at registration; stake custody stays in this contract.
     function stakeForAgent(uint256 agentId, address agentOwner, uint256 riskLevel) external payable onlyAgentRegistry {
-        require(agentId > 0, "Invalid agent id");
-        require(agentOwner != address(0), "Invalid owner");
+        if (agentId == 0) revert InvalidAgentId();
+        if (agentOwner == address(0)) revert InvalidOwner();
 
         StakeInfo storage info = agentStakes[agentId];
-        require(!info.active, "Stake already active");
+        if (info.active) revert StakeAlreadyActive();
 
         agentStakes[agentId] = StakeInfo({amount: msg.value, riskLevel: riskLevel, owner: agentOwner, active: true});
 
@@ -82,15 +97,15 @@ contract StakingManager {
     }
 
     function unstake(uint256 agentId) external {
-        require(agentRegistry != address(0), "Agent registry not set");
-        require(agentId > 0, "Invalid agent id");
+        if (agentRegistry == address(0)) revert AgentRegistryNotSet();
+        if (agentId == 0) revert InvalidAgentId();
 
         StakeInfo storage info = agentStakes[agentId];
-        require(info.active, "No active stake");
-        require(info.owner == msg.sender, "Only agent owner");
+        if (!info.active) revert NoActiveStake();
+        if (info.owner != msg.sender) revert OnlyAgentOwner();
 
         IAgentRegistry.Agent memory agent = IAgentRegistry(agentRegistry).getAgent(agentId);
-        require(!agent.revoked, "Revoked agent cannot unstake");
+        if (agent.revoked) revert RevokedAgentCannotUnstake();
 
         _slashFromTrust(agentId);
 
@@ -111,12 +126,12 @@ contract StakingManager {
         onlyAgentRegistry
         returns (uint256 bonusAmount, uint256 seizedAmount)
     {
-        require(agentId > 0, "Invalid agent id");
-        require(bonusReceiver != address(0), "Invalid bonus receiver");
-        require(bountyBps <= 10_000, "Invalid bounty bps");
+        if (agentId == 0) revert InvalidAgentId();
+        if (bonusReceiver == address(0)) revert InvalidBonusReceiver();
+        if (bountyBps > 10_000) revert InvalidBountyBps();
 
         StakeInfo storage info = agentStakes[agentId];
-        require(info.active, "No active stake");
+        if (!info.active) revert NoActiveStake();
 
         uint256 remainingStakeAmount = info.amount;
         bonusAmount = (remainingStakeAmount * bountyBps) / 10_000;
@@ -164,7 +179,7 @@ contract StakingManager {
     // for testing so native tokens do not get stuck
     function withdrawAmount() external onlyOwner {
         uint256 bal = address(this).balance;
-        require(bal > 0, "No balance");
+        if (bal == 0) revert NoBalance();
 
         payable(owner).sendValue(bal);
     }
