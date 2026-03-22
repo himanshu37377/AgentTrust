@@ -1,6 +1,21 @@
-import { BrowserProvider, Contract, Interface, JsonRpcProvider, formatEther, parseEther } from "ethers";
+import {
+  AbiCoder,
+  BrowserProvider,
+  Contract,
+  Interface,
+  JsonRpcProvider,
+  formatUnits,
+  keccak256,
+  parseUnits,
+  toUtf8Bytes,
+} from "ethers";
+
+const WEIBAR_PER_TINYBAR = 10_000_000_000n;
+const ZERO_HASH = "0x0000000000000000000000000000000000000000000000000000000000000000";
+const abiCoder = AbiCoder.defaultAbiCoder();
 
 export interface AgentCapability {
+  skillId?: number;
   name: string;
   active: boolean;
   description?: string;
@@ -35,6 +50,11 @@ export interface ProtocolLogEntry {
   time: string;
   text: string;
   color: string;
+  eventType?: string;
+  source?: ExecutionHistoryEntry["source"];
+  entity?: string;
+  outcome?: string;
+  sequenceNumber?: number | null;
 }
 
 export interface ExecutionHistoryEntry {
@@ -53,13 +73,24 @@ export interface ExecutionHistoryEntry {
   detailJson: string;
 }
 
+export interface ExecutionAuditTrail {
+  topicId: string;
+  consensusTimestamp: string | null;
+  sequenceNumber: number | null;
+  payerAccountId: string | null;
+  runningHash: string | null;
+  payload: Record<string, unknown>;
+}
+
 export interface ValidatorProfile {
   address: string;
+  validatorId: number;
   isRegistered: boolean;
   active: boolean;
   stakedAmount: string;
   validatorReputation: number;
   registeredAt: number;
+  accuracyScore: number;
 }
 
 interface AgentMetadata {
@@ -67,7 +98,12 @@ interface AgentMetadata {
   description?: string;
   domain?: string;
   endpoint?: string;
-  capabilities?: Array<string | { name?: string; active?: boolean }>;
+  services?: Array<{
+    name?: string;
+    endpoint?: string;
+    description?: string;
+  }>;
+  capabilities?: Array<string | { skillId?: number; name?: string; active?: boolean }>;
 }
 
 export interface AgentExecutionMetadata {
@@ -75,12 +111,42 @@ export interface AgentExecutionMetadata {
   endpoint: string;
   name?: string;
   description?: string;
+  isDeterministic: boolean;
+  capabilityName?: string;
+  expectedReasoning?: string;
+  outputSchema?: string;
 }
 
 export interface AgentExecutionResponse {
   input?: string;
   result?: unknown;
-  outputHash?: string;
+  executionCommitment?: string;
+  normalizedOutput?: string;
+  reasoning?: string;
+}
+
+export interface VerifierResponse {
+  output: string;
+  expectedHash: string;
+  model?: string;
+}
+
+export interface ExecutionStatus {
+  executionId: number;
+  agentId: number;
+  parentExecutionId: number;
+  callerAgentId: number;
+  involvesExternalCall: boolean;
+  externalService: string;
+  reasoningHash: string;
+  executionCommitment: string;
+  executionHash: string;
+  isDeterministic: boolean;
+  approvals: number;
+  rejections: number;
+  finalized: boolean;
+  accepted: boolean;
+  createdAt: number;
 }
 
 interface MirrorNodeLogResponse {
@@ -110,10 +176,11 @@ const DEFAULT_MIRROR_NODE_URL = "https://testnet.mirrornode.hedera.com";
 const AGENT_REGISTRY_ABI = [
   "event AgentRegistered(uint256 indexed agentId,address indexed owner,uint8 riskLevel,bool isDeterministic,string metadataURI)",
   "event AgentRevoked(uint256 indexed agentId)",
-  "event CapabilityChanged(uint256 indexed agentId,string capability,uint256 riskLevel)",
+  "event CapabilityChanged(uint256 indexed agentId,uint32 skillId,string capability,uint256 riskLevel)",
   "event TrustScoreUpdated(uint256 indexed agentId,uint256 oldScore,uint256 newScore)",
   "function getAgent(uint256 agentId) view returns (tuple(bool isRegistered,address owner,string metadataURI,uint256 trustScore,uint8 rating,uint8 riskLevel,bool isDeterministic,uint256 stakeAmount,bool revoked,uint256 createdAt))",
-  "function getCapabilities(uint256 agentId) view returns (tuple(string name,string description,string expectedReasoning,string outputSchema,string domain,bool requiresUserAuthorization,bool active)[])",
+  "function getCapabilities(uint256 agentId) view returns (tuple(uint32 skillId,string name,string description,string expectedReasoning,string outputSchema,string domain,bool requiresUserAuthorization,bool active)[])",
+  "function revokeAgent(uint256 agentId)",
 ] as const;
 
 const REPUTATION_REGISTRY_ABI = [
@@ -130,17 +197,26 @@ const VALIDATION_REGISTRY_ABI = [
   "event VoteSubmitted(uint256 indexed executionId,address indexed validator,bool approve)",
   "event ExecutionFinalized(uint256 indexed executionId,bool accepted,uint256 approvals,uint256 rejections)",
   "event DeterministicExecutionVerified(uint256 indexed executionId,bool accepted)",
-  "event ValidatorRegistered(address indexed validator,uint256 stakedAmount)",
+  "event AgentRegistryUpdated(address indexed agentRegistry)",
+  "event ReputationRegistryUpdated(address indexed reputationRegistry)",
+  "event ValidatorStakeRequirementUpdated(uint256 oldRequirement,uint256 newRequirement)",
+  "event ValidatorRegistered(address indexed validator,uint256 indexed validatorId,uint256 stakedAmount)",
   "event ValidatorStakeToppedUp(address indexed validator,uint256 amount,uint256 totalStake)",
   "event ValidatorUnregistered(address indexed validator,uint256 refundedAmount)",
   "event ValidatorReputationUpdated(address indexed validator,uint256 oldReputation,uint256 newReputation)",
   "function registerValidator() external payable",
+  "function submitExecution(uint256 agentId,uint256 parentExecutionId,uint256 callerAgentId,bool involvesExternalCall,string externalService,bytes32 executionCommitment,bytes32 reasoningHash,bool isDeterministic) external returns (uint256 executionId, bytes32 executionHash)",
+  "function verifyDeterministicExecution(uint256 executionId, bytes32 expectedHash) external",
   "function voteExecution(uint256 executionId, bool approve) external",
   "function topUpValidatorStake() external payable",
   "function unregisterValidator() external",
   "function validatorStakeRequirement() view returns (uint256)",
-  "function validators(address) view returns (bool isRegistered,bool active,uint256 stakedAmount,uint256 validatorReputation,uint256 registeredAt)",
-  "function executions(uint256 executionId) view returns (uint256 agentId, bytes32 reasoningHash, bytes32 outputHash, bytes32 executionHash, bool isDeterministic, uint256 approvals, uint256 rejections, bool finalized, bool accepted, uint256 createdAt)",
+  "function validators(address) view returns (uint256 validatorId,bool isRegistered,bool active,uint256 stakedAmount,uint256 validatorReputation,uint256 registeredAt,uint256 accuracyScore)",
+  "function getExecution(uint256 executionId) view returns (tuple(uint256 executionId,uint256 agentId,uint256 parentExecutionId,uint256 callerAgentId,bool involvesExternalCall,string externalService,bytes32 reasoningHash,bytes32 executionCommitment,bytes32 executionHash,bool isDeterministic,uint256 approvals,uint256 rejections,bool finalized,bool accepted,uint256 createdAt))",
+] as const;
+
+const LEGACY_VALIDATION_REGISTRY_ABI = [
+  "function validators(address) view returns (bool isRegistered,bool active,uint256 stakedAmount,uint256 validatorReputation,uint256 registeredAt,uint256 accuracyScore)",
 ] as const;
 
 const STAKING_MANAGER_ABI = [
@@ -151,7 +227,8 @@ const STAKING_MANAGER_ABI = [
 ] as const;
 
 const AUTHORIZATION_MANAGER_ABI = [
-  "function authorizeAgent(uint256 agentId,string[] capabilities) external",
+  "function authorizeAgent(uint256 agentId,uint32[] skillIds) external",
+  "function checkPermission(address user,uint256 agentId,uint32 skillId) view returns (bool)",
 ] as const;
 
 const eventInterface = new Interface(AGENT_REGISTRY_ABI);
@@ -225,6 +302,76 @@ function getMirrorNodeBaseUrl() {
   return getEnv("VITE_HEDERA_MIRROR_NODE_URL") || DEFAULT_MIRROR_NODE_URL;
 }
 
+function getIpfsGatewayBaseUrl() {
+  return getEnv("VITE_IPFS_GATEWAY_URL") || "https://ipfs.io";
+}
+
+function extractReadableErrorMessage(error: unknown): string {
+  if (typeof error === "object" && error !== null) {
+    const maybeError = error as {
+      shortMessage?: string;
+      reason?: string;
+      message?: string;
+      revert?: { args?: unknown[] };
+      info?: { error?: { message?: string } };
+    };
+
+    if (typeof maybeError.reason === "string" && maybeError.reason.trim()) {
+      return `execution reverted: "${maybeError.reason.trim()}"`;
+    }
+
+    const revertArg = maybeError.revert?.args?.[0];
+    if (typeof revertArg === "string" && revertArg.trim()) {
+      return `execution reverted: "${revertArg.trim()}"`;
+    }
+
+    if (typeof maybeError.shortMessage === "string" && maybeError.shortMessage.trim()) {
+      return maybeError.shortMessage.trim();
+    }
+
+    const nestedInfoMessage = maybeError.info?.error?.message;
+    if (typeof nestedInfoMessage === "string" && nestedInfoMessage.trim()) {
+      return extractReadableErrorMessage(nestedInfoMessage);
+    }
+
+    if (typeof maybeError.message === "string" && maybeError.message.trim()) {
+      const rawMessage = maybeError.message.trim();
+      const revertedMatch = rawMessage.match(/execution reverted:\s*"([^"]+)"/i);
+      if (revertedMatch?.[1]) {
+        return `execution reverted: "${revertedMatch[1]}"`;
+      }
+
+      const reasonMatch = rawMessage.match(/reason="([^"]+)"/i);
+      if (reasonMatch?.[1]) {
+        return `execution reverted: "${reasonMatch[1]}"`;
+      }
+
+      return rawMessage;
+    }
+  }
+
+  if (typeof error === "string" && error.trim()) {
+    const rawMessage = error.trim();
+    const revertedMatch = rawMessage.match(/execution reverted:\s*"([^"]+)"/i);
+    if (revertedMatch?.[1]) {
+      return `execution reverted: "${revertedMatch[1]}"`;
+    }
+
+    const reasonMatch = rawMessage.match(/reason="([^"]+)"/i);
+    if (reasonMatch?.[1]) {
+      return `execution reverted: "${reasonMatch[1]}"`;
+    }
+
+    return rawMessage;
+  }
+
+  return "Unknown error";
+}
+
+export function formatDisplayError(error: unknown): string {
+  return extractReadableErrorMessage(error);
+}
+
 function getValidationTopicId() {
   return getEnv("VITE_HEDERA_VALIDATION_TOPIC_ID");
 }
@@ -295,6 +442,81 @@ function getProtocolLogColor(type: string) {
       return "text-red-400";
     default:
       return "text-slate-400";
+  }
+}
+
+function getProtocolLogSource(type: string): ExecutionHistoryEntry["source"] {
+  switch (type) {
+    case "EXECUTION_SUBMITTED":
+    case "VOTE_CAST":
+    case "EXECUTION_REACHED_CONSENSUS":
+    case "EXECUTION_FINALIZED":
+    case "VALIDATOR_REGISTERED":
+      return "Validation";
+    case "AGENT_REGISTERED":
+    case "AGENT_REVOKED":
+      return "AgentRegistry";
+    default:
+      return "HCS";
+  }
+}
+
+function getProtocolLogEventType(type: string) {
+  switch (type) {
+    case "EXECUTION_SUBMITTED":
+      return "ExecutionSubmitted";
+    case "VOTE_CAST":
+      return "VoteSubmitted";
+    case "EXECUTION_REACHED_CONSENSUS":
+      return "ConsensusReached";
+    case "EXECUTION_FINALIZED":
+      return "ExecutionFinalized";
+    case "VALIDATOR_REGISTERED":
+      return "ValidatorRegistered";
+    case "AGENT_REGISTERED":
+      return "AgentRegistered";
+    case "AGENT_REVOKED":
+      return "AgentRevoked";
+    default:
+      return type || "HCS";
+  }
+}
+
+function getProtocolLogEntity(payload: Record<string, unknown>) {
+  switch (payload.type) {
+    case "EXECUTION_SUBMITTED":
+    case "VOTE_CAST":
+    case "EXECUTION_REACHED_CONSENSUS":
+    case "EXECUTION_FINALIZED":
+      return `Execution #${payload.executionId ?? "?"}`;
+    case "VALIDATOR_REGISTERED":
+      return `Validator ${shortenAddress(String(payload.validator || ""))}`;
+    case "AGENT_REGISTERED":
+    case "AGENT_REVOKED":
+      return `Agent #${payload.agentId ?? "?"}`;
+    default:
+      return "Protocol";
+  }
+}
+
+function getProtocolLogOutcome(payload: Record<string, unknown>) {
+  switch (payload.type) {
+    case "EXECUTION_SUBMITTED":
+      return "Submitted";
+    case "VOTE_CAST":
+      return String(payload.vote || "").toUpperCase() === "APPROVE" ? "Approved" : "Rejected";
+    case "EXECUTION_REACHED_CONSENSUS":
+      return String(payload.result || "").toUpperCase() === "APPROVED" ? "Accepted" : "Rejected";
+    case "EXECUTION_FINALIZED":
+      return String(payload.result || "").toUpperCase() === "APPROVED" ? "Accepted" : "Rejected";
+    case "VALIDATOR_REGISTERED":
+      return "Registered";
+    case "AGENT_REGISTERED":
+      return "Registered";
+    case "AGENT_REVOKED":
+      return "Revoked";
+    default:
+      return "Logged";
   }
 }
 
@@ -385,7 +607,7 @@ function normalizeIpfsUri(uri: string) {
     return uri;
   }
 
-  return `https://ipfs.io/ipfs/${uri.slice("ipfs://".length)}`;
+  return `${getIpfsGatewayBaseUrl().replace(/\/+$/, "")}/ipfs/${uri.slice("ipfs://".length)}`;
 }
 
 async function fetchMetadata(metadataUri: string): Promise<AgentMetadata | null> {
@@ -431,7 +653,21 @@ export async function fetchAgentExecutionMetadata(agentId: number): Promise<Agen
   }
 
   const metadata = await fetchMetadata(metadataUri);
-  const endpoint = metadata?.endpoint?.trim();
+  let capabilities: Array<{
+    name?: string;
+    active?: boolean;
+    expectedReasoning?: string;
+    outputSchema?: string;
+  }> = [];
+
+  try {
+    capabilities = await agentRegistry.getCapabilities(agentId);
+  } catch {
+    capabilities = [];
+  }
+
+  const primaryCapability = capabilities.find((capability) => capability?.active !== false) ?? capabilities[0];
+  const endpoint = metadata?.endpoint?.trim() || metadata?.services?.[0]?.endpoint?.trim();
 
   if (!endpoint) {
     throw new Error("Agent metadata does not include a valid endpoint.");
@@ -442,17 +678,72 @@ export async function fetchAgentExecutionMetadata(agentId: number): Promise<Agen
     endpoint,
     name: metadata?.name,
     description: metadata?.description,
+    isDeterministic: Boolean(agentRecord.isDeterministic),
+    capabilityName: primaryCapability?.name,
+    expectedReasoning: primaryCapability?.expectedReasoning,
+    outputSchema: primaryCapability?.outputSchema,
   };
 }
 
-export async function executeAgentTask(endpoint: string, prompt: string): Promise<AgentExecutionResponse> {
-  const url = endpoint.replace(/\/+$/, "") + "/agent/execute";
+export function normalizeDeterministicOutput(result: unknown): string {
+  if (typeof result === "string") {
+    return result.replace(/\s+/g, " ").trim().toLowerCase();
+  }
+
+  if (result === undefined) {
+    return "";
+  }
+
+  return JSON.stringify(result).replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+export function computeDeterministicBindingHash(
+  input: string,
+  normalizedOutput: string,
+  agentId: number,
+): string {
+  if (!Number.isInteger(agentId) || agentId <= 0) {
+    throw new Error("agentId must be a positive integer");
+  }
+
+  return keccak256(
+    abiCoder.encode(
+      ["string", "string", "uint256"],
+      [input, normalizedOutput, BigInt(agentId)],
+    ),
+  );
+}
+
+export function computeReasoningHash(reasoning: string): string {
+  const normalizedReasoning = reasoning.trim();
+  if (!normalizedReasoning) {
+    return ZERO_HASH;
+  }
+
+  return keccak256(toUtf8Bytes(normalizedReasoning));
+}
+
+function buildAgentBaseUrl(endpoint: string) {
+  const normalizedEndpoint = endpoint.replace(/\/+$/, "");
+  return normalizedEndpoint.endsWith("/agent/execute")
+    ? normalizedEndpoint.slice(0, -"/agent/execute".length)
+    : normalizedEndpoint;
+}
+
+export async function executeAgentTask(
+  endpoint: string,
+  prompt: string,
+  agentId?: number,
+): Promise<AgentExecutionResponse> {
+  const baseUrl = buildAgentBaseUrl(endpoint);
+  const url = `${baseUrl}/agent/execute`;
+
   const response = await fetch(url, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ prompt }),
+    body: JSON.stringify(agentId ? { prompt, agentId } : { prompt }),
   });
 
   if (!response.ok) {
@@ -460,6 +751,23 @@ export async function executeAgentTask(endpoint: string, prompt: string): Promis
   }
 
   return (await response.json()) as AgentExecutionResponse;
+}
+
+export async function verifyWithBackend(endpoint: string, input: string, agentId: number): Promise<VerifierResponse> {
+  const baseUrl = buildAgentBaseUrl(endpoint);
+  const response = await fetch(`${baseUrl}/api/verify`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ input, agentId }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Verifier request failed with status ${response.status}`);
+  }
+
+  return (await response.json()) as VerifierResponse;
 }
 
 function buildInitials(name: string) {
@@ -492,12 +800,14 @@ async function fetchCapabilities(agentRegistry: Contract, agentId: number): Prom
   const capabilities = await agentRegistry.getCapabilities(agentId);
 
   return capabilities.map((capability: {
+    skillId?: bigint | number;
     name: string;
     description: string;
     domain: string;
     requiresUserAuthorization: boolean;
     active: boolean;
   }) => ({
+    skillId: capability.skillId !== undefined ? Number(capability.skillId) : undefined,
     name: capability.name,
     active: capability.active,
     description: capability.description,
@@ -514,12 +824,14 @@ function normalizeCapabilityNames(
     return metadataCapabilities.map((capability, index) => {
       if (typeof capability === "string") {
         return {
+          skillId: contractCapabilities[index]?.skillId,
           name: capability,
           active: contractCapabilities[index]?.active ?? true,
         };
       }
 
       return {
+        skillId: capability.skillId ?? contractCapabilities[index]?.skillId,
         name: capability.name || contractCapabilities[index]?.name || `Capability ${index + 1}`,
         active: capability.active ?? contractCapabilities[index]?.active ?? true,
       };
@@ -592,16 +904,17 @@ export async function fetchAgents(): Promise<Agent[]> {
 
   const agentIds = await fetchAgentIds();
 
-  const agents = await Promise.all(
+  const settledAgents = await Promise.allSettled(
     agentIds.map(async (agentId) => {
-      const [agentRecord, contractCapabilities, trustScoreValue] = await Promise.all([
-        agentRegistry.getAgent(agentId),
-        fetchCapabilities(agentRegistry, agentId),
-        reputationRegistry.getTrustScore(agentId),
-      ]);
-      const metadata = await fetchMetadata(agentRecord.metadataURI);
+      const agentRecord = await agentRegistry.getAgent(agentId);
 
-      const trustScore = Number(trustScoreValue);
+      const [contractCapabilities, trustScoreValue, metadata] = await Promise.all([
+        fetchCapabilities(agentRegistry, agentId).catch(() => [] as AgentCapability[]),
+        reputationRegistry.getTrustScore(agentId).catch(() => agentRecord.trustScore),
+        fetchMetadata(agentRecord.metadataURI).catch(() => null),
+      ]);
+
+      const trustScore = Number(trustScoreValue ?? agentRecord.trustScore ?? 0);
       const riskLevel = Number(agentRecord.riskLevel);
       const normalizedCapabilities = normalizeCapabilityNames(metadata?.capabilities, contractCapabilities);
       const primaryDomain =
@@ -646,7 +959,14 @@ export async function fetchAgents(): Promise<Agent[]> {
     }),
   );
 
-  return agents;
+  return settledAgents.flatMap((result) => {
+    if (result.status === "fulfilled") {
+      return [result.value];
+    }
+
+    console.warn("Unable to hydrate registered agent for Explore page", result.reason);
+    return [];
+  });
 }
 
 export async function voteOnExecution(executionId: number, approve: boolean) {
@@ -663,12 +983,270 @@ export async function voteOnExecution(executionId: number, approve: boolean) {
     signer,
   );
 
-  const tx = await validationRegistry.voteExecution(executionId, approve);
-  const receipt = await tx.wait();
+  let tx;
+  let receipt;
+  try {
+    tx = await validationRegistry.voteExecution(executionId, approve);
+    receipt = await tx.wait();
+  } catch (error) {
+    throw new Error(formatDisplayError(error));
+  }
+
+  const execution = await validationRegistry.getExecution(executionId);
 
   return {
     hash: tx.hash as string,
     receipt,
+    finalized: Boolean(execution.finalized),
+    accepted: Boolean(execution.accepted),
+    approvals: Number(execution.approvals),
+    rejections: Number(execution.rejections),
+  };
+}
+
+interface SubmitDeterministicExecutionParams {
+  agentId: number;
+  prompt: string;
+  endpoint: string;
+  parentExecutionId?: number;
+  callerAgentId?: number;
+  involvesExternalCall?: boolean;
+  externalService?: string;
+}
+
+interface SubmitDeterministicExecutionHashParams {
+  agentId: number;
+  executionCommitment: string;
+  reasoningHash?: string;
+  isDeterministic?: boolean;
+  parentExecutionId?: number;
+  callerAgentId?: number;
+  involvesExternalCall?: boolean;
+  externalService?: string;
+}
+
+export async function submitDeterministicExecution({
+  agentId,
+  prompt,
+  endpoint,
+  parentExecutionId = 0,
+  callerAgentId = 0,
+  involvesExternalCall = false,
+  externalService = "",
+}: SubmitDeterministicExecutionParams) {
+  const ethereum = getEthereumProvider();
+  if (!ethereum) {
+    throw new Error("Wallet not available");
+  }
+
+  const normalizedPrompt = prompt.trim();
+  if (!normalizedPrompt) {
+    throw new Error("Prompt is required");
+  }
+
+  await ethereum.request({ method: "eth_requestAccounts" });
+
+  const execution = await executeAgentTask(endpoint, normalizedPrompt, agentId);
+  const normalizedOutput = execution.normalizedOutput ?? normalizeDeterministicOutput(execution.result);
+  const executionCommitment =
+    execution.executionCommitment ??
+    computeDeterministicBindingHash(normalizedPrompt, normalizedOutput, agentId);
+
+  const provider = new BrowserProvider(ethereum as never);
+  const signer = await provider.getSigner();
+  const validationRegistry = new Contract(
+    getValidationRegistryAddress(),
+    VALIDATION_REGISTRY_ABI,
+    signer,
+  );
+
+  let tx;
+  let receipt;
+  try {
+    tx = await validationRegistry.submitExecution(
+      agentId,
+      parentExecutionId,
+      callerAgentId,
+      involvesExternalCall,
+      externalService,
+      executionCommitment,
+      ZERO_HASH,
+      true,
+    );
+    receipt = await tx.wait();
+  } catch (error) {
+    throw new Error(formatDisplayError(error));
+  }
+
+  let executionId: number | null = null;
+  for (const log of receipt.logs ?? []) {
+    try {
+      const parsed = validationEventInterface.parseLog(log);
+      if (parsed?.name === "ExecutionSubmitted") {
+        executionId = Number(parsed.args.executionId);
+        break;
+      }
+    } catch {
+      continue;
+    }
+  }
+
+  return {
+    hash: tx.hash as string,
+    receipt,
+    executionId,
+    executionCommitment,
+    normalizedOutput,
+    output: execution.result,
+  };
+}
+
+export async function submitDeterministicExecutionHash({
+  agentId,
+  executionCommitment,
+  reasoningHash = ZERO_HASH,
+  isDeterministic = true,
+  parentExecutionId = 0,
+  callerAgentId = 0,
+  involvesExternalCall = false,
+  externalService = "",
+}: SubmitDeterministicExecutionHashParams) {
+  const ethereum = getEthereumProvider();
+  if (!ethereum) {
+    throw new Error("Wallet not available");
+  }
+
+  if (!executionCommitment || executionCommitment === ZERO_HASH) {
+    throw new Error("Execution commitment is required");
+  }
+
+  if (!isDeterministic && (!reasoningHash || reasoningHash === ZERO_HASH)) {
+    throw new Error("Reasoning hash is required for non-deterministic executions");
+  }
+
+  await ethereum.request({ method: "eth_requestAccounts" });
+
+  const provider = new BrowserProvider(ethereum as never);
+  const signer = await provider.getSigner();
+  const validationRegistry = new Contract(
+    getValidationRegistryAddress(),
+    VALIDATION_REGISTRY_ABI,
+    signer,
+  );
+
+  let tx;
+  let receipt;
+  try {
+    tx = await validationRegistry.submitExecution(
+      agentId,
+      parentExecutionId,
+      callerAgentId,
+      involvesExternalCall,
+      externalService,
+      executionCommitment,
+      reasoningHash,
+      isDeterministic,
+    );
+    receipt = await tx.wait();
+  } catch (error) {
+    throw new Error(formatDisplayError(error));
+  }
+
+  let executionId: number | null = null;
+  for (const log of receipt.logs ?? []) {
+    try {
+      const parsed = validationEventInterface.parseLog(log);
+      if (parsed?.name === "ExecutionSubmitted") {
+        executionId = Number(parsed.args.executionId);
+        break;
+      }
+    } catch {
+      continue;
+    }
+  }
+
+  return {
+    hash: tx.hash as string,
+    receipt,
+    executionId,
+  };
+}
+
+export async function fetchExecutionStatus(executionId: number): Promise<ExecutionStatus> {
+  const provider = getProvider();
+  const validationRegistry = new Contract(
+    getValidationRegistryAddress(),
+    VALIDATION_REGISTRY_ABI,
+    provider,
+  );
+
+  const execution = await validationRegistry.getExecution(executionId);
+
+  return {
+    executionId: Number(execution.executionId),
+    agentId: Number(execution.agentId),
+    parentExecutionId: Number(execution.parentExecutionId),
+    callerAgentId: Number(execution.callerAgentId),
+    involvesExternalCall: Boolean(execution.involvesExternalCall),
+    externalService: String(execution.externalService ?? ""),
+    reasoningHash: String(execution.reasoningHash),
+    executionCommitment: String(execution.executionCommitment),
+    executionHash: String(execution.executionHash),
+    isDeterministic: Boolean(execution.isDeterministic),
+    approvals: Number(execution.approvals),
+    rejections: Number(execution.rejections),
+    finalized: Boolean(execution.finalized),
+    accepted: Boolean(execution.accepted),
+    createdAt: Number(execution.createdAt),
+  };
+}
+
+export async function verifyDeterministicExecution(executionId: number, expectedHash: string) {
+  const ethereum = getEthereumProvider();
+  if (!ethereum) {
+    throw new Error("Wallet not available");
+  }
+
+  if (!expectedHash || expectedHash === ZERO_HASH) {
+    throw new Error("Expected hash is required");
+  }
+
+  await ethereum.request({ method: "eth_requestAccounts" });
+
+  const provider = new BrowserProvider(ethereum as never);
+  const signer = await provider.getSigner();
+  const validationRegistry = new Contract(
+    getValidationRegistryAddress(),
+    VALIDATION_REGISTRY_ABI,
+    signer,
+  );
+
+  let tx;
+  let receipt;
+  try {
+    tx = await validationRegistry.verifyDeterministicExecution(executionId, expectedHash);
+    receipt = await tx.wait();
+  } catch (error) {
+    throw new Error(formatDisplayError(error));
+  }
+  let accepted: boolean | null = null;
+
+  for (const log of receipt.logs ?? []) {
+    try {
+      const parsed = validationEventInterface.parseLog(log);
+      if (parsed?.name === "DeterministicExecutionVerified") {
+        accepted = Boolean(parsed.args.accepted);
+        break;
+      }
+    } catch {
+      continue;
+    }
+  }
+
+  return {
+    hash: tx.hash as string,
+    receipt,
+    accepted,
   };
 }
 
@@ -690,17 +1268,38 @@ export async function fetchConnectedValidatorProfile(): Promise<ValidatorProfile
     VALIDATION_REGISTRY_ABI,
     provider,
   );
+  try {
+    const validator = await validationRegistry.validators(account);
 
-  const validator = await validationRegistry.validators(account);
+    return {
+      address: account,
+      validatorId: Number(validator.validatorId),
+      isRegistered: Boolean(validator.isRegistered),
+      active: Boolean(validator.active),
+      stakedAmount: formatUnits(validator.stakedAmount, 8),
+      validatorReputation: Number(validator.validatorReputation),
+      registeredAt: Number(validator.registeredAt),
+      accuracyScore: Number(validator.accuracyScore),
+    };
+  } catch {
+    const legacyValidationRegistry = new Contract(
+      getValidationRegistryAddress(),
+      LEGACY_VALIDATION_REGISTRY_ABI,
+      provider,
+    );
+    const validator = await legacyValidationRegistry.validators(account);
 
-  return {
-    address: account,
-    isRegistered: Boolean(validator.isRegistered),
-    active: Boolean(validator.active),
-    stakedAmount: formatEther(validator.stakedAmount),
-    validatorReputation: Number(validator.validatorReputation),
-    registeredAt: Number(validator.registeredAt),
-  };
+    return {
+      address: account,
+      validatorId: 0,
+      isRegistered: Boolean(validator.isRegistered),
+      active: Boolean(validator.active),
+      stakedAmount: formatUnits(validator.stakedAmount, 8),
+      validatorReputation: Number(validator.validatorReputation),
+      registeredAt: Number(validator.registeredAt),
+      accuracyScore: Number(validator.accuracyScore),
+    };
+  }
 }
 
 export async function fetchValidatorStakeRequirement() {
@@ -712,7 +1311,7 @@ export async function fetchValidatorStakeRequirement() {
   );
 
   const requirement = await validationRegistry.validatorStakeRequirement();
-  return formatEther(requirement);
+  return formatUnits(requirement, 8);
 }
 
 export async function registerValidator(stakeAmountInHbar: string) {
@@ -736,8 +1335,10 @@ export async function registerValidator(stakeAmountInHbar: string) {
     signer,
   );
 
+  const requiredStake = await validationRegistry.validatorStakeRequirement();
+
   const tx = await validationRegistry.registerValidator({
-    value: parseEther(normalized),
+    value: BigInt(requiredStake) * WEIBAR_PER_TINYBAR,
   });
   const receipt = await tx.wait();
 
@@ -769,7 +1370,7 @@ export async function topUpValidatorStake(amountInHbar: string) {
   );
 
   const tx = await validationRegistry.topUpValidatorStake({
-    value: parseEther(normalized),
+    value: parseUnits(normalized, 18),
   });
   const receipt = await tx.wait();
 
@@ -805,17 +1406,17 @@ export async function unregisterValidator() {
 }
 
 
-export async function authorizeAgentCapabilities(agentId: number, capabilities: string[]) {
+export async function authorizeAgentCapabilities(agentId: number, skillIds: number[]) {
   const ethereum = getEthereumProvider();
   if (!ethereum) {
     throw new Error("Wallet not available");
   }
 
-  const sanitizedCapabilities = capabilities
-    .map((capability) => capability.trim())
-    .filter(Boolean);
+  const sanitizedSkillIds = skillIds
+    .map((skillId) => Number(skillId))
+    .filter((skillId) => Number.isInteger(skillId) && skillId >= 0 && (skillId <= 39 || skillId >= 100));
 
-  if (sanitizedCapabilities.length === 0) {
+  if (sanitizedSkillIds.length === 0) {
     throw new Error("Select at least one capability");
   }
 
@@ -829,7 +1430,105 @@ export async function authorizeAgentCapabilities(agentId: number, capabilities: 
     signer,
   );
 
-  const tx = await authorizationManager.authorizeAgent(agentId, sanitizedCapabilities);
+  const tx = await authorizationManager.authorizeAgent(agentId, sanitizedSkillIds);
+  const receipt = await tx.wait();
+
+  return {
+    hash: tx.hash as string,
+    receipt,
+  };
+}
+
+export async function fetchAgentAuthorizationStatus(agentId: number, skillIds: number[]) {
+  const requiredSkillIds = Array.from(
+    new Set(
+      skillIds
+        .map((skillId) => Number(skillId))
+        .filter((skillId) => Number.isInteger(skillId) && skillId >= 0),
+    ),
+  );
+
+  if (requiredSkillIds.length === 0) {
+    return {
+      connected: false,
+      account: null as string | null,
+      requiredSkillIds: [],
+      authorizedSkillIds: [],
+      unauthorizedSkillIds: [],
+      allAuthorized: true,
+    };
+  }
+
+  const ethereum = getEthereumProvider();
+  if (!ethereum) {
+    return {
+      connected: false,
+      account: null as string | null,
+      requiredSkillIds,
+      authorizedSkillIds: [],
+      unauthorizedSkillIds: requiredSkillIds,
+      allAuthorized: false,
+    };
+  }
+
+  const accounts = (await ethereum.request({ method: "eth_accounts" })) as string[];
+  const account = accounts[0] ?? null;
+
+  if (!account) {
+    return {
+      connected: false,
+      account: null as string | null,
+      requiredSkillIds,
+      authorizedSkillIds: [],
+      unauthorizedSkillIds: requiredSkillIds,
+      allAuthorized: false,
+    };
+  }
+
+  const provider = new BrowserProvider(ethereum as never);
+  const authorizationManager = new Contract(
+    getAuthorizationManagerAddress(),
+    AUTHORIZATION_MANAGER_ABI,
+    provider,
+  );
+
+  const checks = await Promise.all(
+    requiredSkillIds.map(async (skillId) => ({
+      skillId,
+      allowed: Boolean(await authorizationManager.checkPermission(account, agentId, skillId)),
+    })),
+  );
+
+  const authorizedSkillIds = checks.filter((item) => item.allowed).map((item) => item.skillId);
+  const unauthorizedSkillIds = checks.filter((item) => !item.allowed).map((item) => item.skillId);
+
+  return {
+    connected: true,
+    account,
+    requiredSkillIds,
+    authorizedSkillIds,
+    unauthorizedSkillIds,
+    allAuthorized: unauthorizedSkillIds.length === 0,
+  };
+}
+
+export async function revokeRegisteredAgent(agentId: number) {
+  const ethereum = getEthereumProvider();
+  if (!ethereum) {
+    throw new Error("Wallet not available");
+  }
+
+  await ethereum.request({ method: "eth_requestAccounts" });
+
+  const provider = new BrowserProvider(ethereum as never);
+  const signer = await provider.getSigner();
+  const agentRegistry = new Contract(
+    getAgentRegistryAddress(),
+    AGENT_REGISTRY_ABI,
+    signer,
+  );
+
+  const tx = await agentRegistry.revokeAgent(agentId);
   const receipt = await tx.wait();
 
   return {
@@ -856,35 +1555,180 @@ export async function submitAgentReview(agentId: number, rating: number, feedbac
 
 export async function fetchProtocolLogs(limit = 12): Promise<ProtocolLogEntry[]> {
   const topicId = getValidationTopicId();
-  if (!topicId) {
-    return [];
-  }
+  const mergedEntries: Array<ProtocolLogEntry & { sortValue: number; dedupeKey: string }> = [];
 
-  const response = await fetch(
-    `${getMirrorNodeBaseUrl()}/api/v1/topics/${topicId}/messages?order=desc&limit=${limit}`,
-  );
-
-  if (!response.ok) {
-    throw new Error(`Mirror Node topic request failed with ${response.status}`);
-  }
-
-  const data = (await response.json()) as MirrorNodeTopicMessagesResponse;
-  const parsedLogs = (data.messages || [])
-    .map((message) => {
+  try {
+    const validationLogs = await fetchContractLogs(getValidationRegistryAddress(), limit * 2);
+    for (const [index, log] of validationLogs.entries()) {
       try {
-        const parsed = parseMirrorNodeMessage(message);
-        return {
-          time: formatConsensusTime(parsed.consensusTimestamp),
-          text: formatProtocolLogMessage(parsed.payload),
-          color: getProtocolLogColor(String(parsed.payload.type || "")),
-        } satisfies ProtocolLogEntry;
-      } catch {
-        return null;
-      }
-    })
-    .filter((entry): entry is ProtocolLogEntry => Boolean(entry));
+        const parsed = validationEventInterface.parseLog({ topics: log.topics, data: log.data });
+        if (!parsed) continue;
 
-  return parsedLogs.reverse();
+        const time = formatMirrorTimestampLabel(log.timestamp);
+        const sortValue = mirrorTimestampToMillis(log.timestamp);
+        const txHash = shortTxHash(log.transaction_hash);
+
+        switch (parsed.name) {
+          case "ExecutionSubmitted":
+            mergedEntries.push({
+              time,
+              text: `ExecutionSubmitted -> Execution #${parsed.args.executionId.toString()} for Agent #${parsed.args.agentId.toString()}`,
+              color: "text-blue-400",
+              sortValue,
+              dedupeKey: `${log.transaction_hash ?? "tx"}-${index}-${parsed.name}`,
+            });
+            break;
+          case "VoteSubmitted":
+            mergedEntries.push({
+              time,
+              text: `VoteSubmitted -> Validator ${shortenAddress(String(parsed.args.validator))} ${parsed.args.approve ? "approved" : "rejected"} execution #${parsed.args.executionId.toString()}`,
+              color: parsed.args.approve ? "text-emerald-400" : "text-red-400",
+              sortValue,
+              dedupeKey: `${log.transaction_hash ?? "tx"}-${index}-${parsed.name}`,
+            });
+            break;
+          case "ExecutionFinalized":
+            mergedEntries.push({
+              time,
+              text: `ExecutionFinalized -> Execution #${parsed.args.executionId.toString()} ${parsed.args.accepted ? "accepted" : "rejected"} (${parsed.args.approvals.toString()}/${parsed.args.rejections.toString()})`,
+              color: parsed.args.accepted ? "text-slate-300" : "text-red-300",
+              sortValue,
+              dedupeKey: `${log.transaction_hash ?? "tx"}-${index}-${parsed.name}`,
+            });
+            break;
+          case "DeterministicExecutionVerified":
+            mergedEntries.push({
+              time,
+              text: `DeterministicExecutionVerified -> Execution #${parsed.args.executionId.toString()} ${parsed.args.accepted ? "accepted" : "rejected"}`,
+              color: parsed.args.accepted ? "text-cyan-300" : "text-rose-300",
+              sortValue,
+              dedupeKey: `${log.transaction_hash ?? "tx"}-${index}-${parsed.name}`,
+            });
+            break;
+          case "ValidatorRegistered":
+            mergedEntries.push({
+              time,
+              text: `ValidatorRegistered -> ${shortenAddress(String(parsed.args.validator))} joined as ${parsed.args.validatorId.toString()} with ${formatUnits(parsed.args.stakedAmount, 18)} HBAR`,
+              color: "text-emerald-400",
+              sortValue,
+              dedupeKey: `${log.transaction_hash ?? "tx"}-${index}-${parsed.name}`,
+            });
+            break;
+          case "ValidatorStakeToppedUp":
+            mergedEntries.push({
+              time,
+              text: `ValidatorStakeToppedUp -> ${shortenAddress(String(parsed.args.validator))} added ${formatUnits(parsed.args.amount, 18)} HBAR (total ${formatUnits(parsed.args.totalStake, 18)})`,
+              color: "text-amber-300",
+              sortValue,
+              dedupeKey: `${log.transaction_hash ?? "tx"}-${index}-${parsed.name}`,
+            });
+            break;
+          case "ValidatorUnregistered":
+            mergedEntries.push({
+              time,
+              text: `ValidatorUnregistered -> ${shortenAddress(String(parsed.args.validator))} refunded ${formatUnits(parsed.args.refundedAmount, 18)} HBAR`,
+              color: "text-rose-300",
+              sortValue,
+              dedupeKey: `${log.transaction_hash ?? "tx"}-${index}-${parsed.name}`,
+            });
+            break;
+          case "ValidatorReputationUpdated":
+            mergedEntries.push({
+              time,
+              text: `ValidatorReputationUpdated -> ${shortenAddress(String(parsed.args.validator))} ${parsed.args.oldReputation.toString()} -> ${parsed.args.newReputation.toString()}`,
+              color: "text-violet-300",
+              sortValue,
+              dedupeKey: `${log.transaction_hash ?? "tx"}-${index}-${parsed.name}`,
+            });
+            break;
+          case "AgentRegistryUpdated":
+            mergedEntries.push({
+              time,
+              text: `AgentRegistryUpdated -> ${shortenAddress(String(parsed.args.agentRegistry))} via ${txHash}`,
+              color: "text-slate-400",
+              sortValue,
+              dedupeKey: `${log.transaction_hash ?? "tx"}-${index}-${parsed.name}`,
+            });
+            break;
+          case "ReputationRegistryUpdated":
+            mergedEntries.push({
+              time,
+              text: `ReputationRegistryUpdated -> ${shortenAddress(String(parsed.args.reputationRegistry))} via ${txHash}`,
+              color: "text-slate-400",
+              sortValue,
+              dedupeKey: `${log.transaction_hash ?? "tx"}-${index}-${parsed.name}`,
+            });
+            break;
+          case "ValidatorStakeRequirementUpdated":
+            mergedEntries.push({
+              time,
+              text: `ValidatorStakeRequirementUpdated -> ${formatUnits(parsed.args.oldRequirement, 8)} -> ${formatUnits(parsed.args.newRequirement, 8)} HBAR`,
+              color: "text-amber-400",
+              sortValue,
+              dedupeKey: `${log.transaction_hash ?? "tx"}-${index}-${parsed.name}`,
+            });
+            break;
+          default:
+            break;
+        }
+      } catch {
+        continue;
+      }
+    }
+  } catch {
+    // Keep HCS-backed logs available even if contract log fetch fails.
+  }
+
+  if (topicId) {
+    try {
+      const response = await fetch(
+        `${getMirrorNodeBaseUrl()}/api/v1/topics/${topicId}/messages?order=desc&limit=${limit}`,
+      );
+
+      if (!response.ok) {
+        throw new Error(`Mirror Node topic request failed with ${response.status}`);
+      }
+
+      const data = (await response.json()) as MirrorNodeTopicMessagesResponse;
+      for (const [index, message] of (data.messages || []).entries()) {
+        try {
+          const parsed = parseMirrorNodeMessage(message);
+          mergedEntries.push({
+            time: formatConsensusTime(parsed.consensusTimestamp),
+            text: formatProtocolLogMessage(parsed.payload),
+            color: getProtocolLogColor(String(parsed.payload.type || "")),
+            eventType: getProtocolLogEventType(String(parsed.payload.type || "")),
+            source: getProtocolLogSource(String(parsed.payload.type || "")),
+            entity: getProtocolLogEntity(parsed.payload),
+            outcome: getProtocolLogOutcome(parsed.payload),
+            sequenceNumber: typeof parsed.sequenceNumber === "number" ? parsed.sequenceNumber : null,
+            sortValue: mirrorTimestampToMillis(parsed.consensusTimestamp ?? undefined),
+            dedupeKey: `topic-${parsed.consensusTimestamp ?? index}-${String(parsed.payload.type ?? "unknown")}`,
+          });
+        } catch {
+          continue;
+        }
+      }
+    } catch {
+      if (mergedEntries.length === 0) {
+        throw new Error("Unable to load protocol logs");
+      }
+    }
+  }
+
+  const seen = new Set<string>();
+
+  return mergedEntries
+    .sort((a, b) => b.sortValue - a.sortValue)
+    .filter((entry) => {
+      if (seen.has(entry.dedupeKey)) {
+        return false;
+      }
+      seen.add(entry.dedupeKey);
+      return true;
+    })
+    .slice(0, limit)
+    .map(({ time, text, color }) => ({ time, text, color }));
 }
 
 export async function fetchExecutionHistory(limit = 50): Promise<ExecutionHistoryEntry[]> {
@@ -895,7 +1739,6 @@ export async function fetchExecutionHistory(limit = 50): Promise<ExecutionHistor
     validationRegistryLogs,
     reputationRegistryLogs,
     stakingManagerLogs,
-    hcsLogs,
   ] = await Promise.all([
     (async () => {
       try {
@@ -925,7 +1768,6 @@ export async function fetchExecutionHistory(limit = 50): Promise<ExecutionHistor
         return [];
       }
     })(),
-    fetchProtocolLogs(limit).catch(() => []),
   ]);
 
   for (const [index, log] of agentRegistryLogs.entries()) {
@@ -1432,24 +2274,88 @@ export async function fetchExecutionHistory(limit = 50): Promise<ExecutionHistor
     }
   }
 
-  if (hcsLogs.length) {
-    const hcsEntries = hcsLogs.map((log, index) => buildHistoryEntry({
-      id: `hcs-${index}-${log.time}`,
-      txHash: `HCS-${index + 1}`,
-      source: "HCS",
-      eventType: "HCS_EVENT",
-      entity: "Protocol",
-      eventClass: "HCS",
-      eventColor: log.color,
-      outcome: "Logged",
-      outcomeColor: outcomeColors("logged"),
-      timestampLabel: log.time,
-      timestampValue: Date.now(),
-      description: log.text,
-      detailJson: JSON.stringify({ message: log.text }, null, 2),
-    }));
-    entries.push(...hcsEntries);
+  return entries.sort((a, b) => b.timestampValue - a.timestampValue).slice(0, limit);
+}
+
+export async function fetchExecutionAuditTrail(entry: ExecutionHistoryEntry): Promise<ExecutionAuditTrail | null> {
+  const topicId = getValidationTopicId();
+  if (!topicId) {
+    return null;
   }
 
-  return entries.sort((a, b) => b.timestampValue - a.timestampValue).slice(0, limit);
+  const response = await fetch(
+    `${getMirrorNodeBaseUrl()}/api/v1/topics/${topicId}/messages?order=desc&limit=100`,
+  );
+
+  if (!response.ok) {
+    throw new Error(`Mirror Node topic request failed with ${response.status}`);
+  }
+
+  const data = (await response.json()) as MirrorNodeTopicMessagesResponse;
+
+  let detail: Record<string, unknown> = {};
+  try {
+    detail = JSON.parse(entry.detailJson) as Record<string, unknown>;
+  } catch {
+    detail = {};
+  }
+
+  const executionId = String(
+    detail.executionId ??
+    entry.entity.match(/#(\d+)/)?.[1] ??
+    "",
+  );
+  const agentId = String(
+    detail.agentId ??
+    entry.description.match(/Agent #(\d+)/)?.[1] ??
+    entry.entity.match(/#(\d+)/)?.[1] ??
+    "",
+  );
+  const validator = String(detail.validator ?? "");
+
+  const matched = (data.messages || []).find((message) => {
+    try {
+      const parsed = parseMirrorNodeMessage(message);
+      const payload = parsed.payload;
+      const payloadType = String(payload.type || "");
+
+      if (executionId && String(payload.executionId ?? "") === executionId) {
+        return true;
+      }
+
+      if (
+        agentId &&
+        String(payload.agentId ?? "") === agentId &&
+        ["AGENT_REGISTERED", "AGENT_REVOKED"].includes(payloadType)
+      ) {
+        return true;
+      }
+
+      if (
+        validator &&
+        String(payload.validator ?? "").toLowerCase() === validator.toLowerCase() &&
+        payloadType === "VALIDATOR_REGISTERED"
+      ) {
+        return true;
+      }
+
+      return false;
+    } catch {
+      return false;
+    }
+  });
+
+  if (!matched) {
+    return null;
+  }
+
+  const parsed = parseMirrorNodeMessage(matched);
+  return {
+    topicId,
+    consensusTimestamp: parsed.consensusTimestamp,
+    sequenceNumber: typeof parsed.sequenceNumber === "number" ? parsed.sequenceNumber : null,
+    payerAccountId: parsed.payerAccountId,
+    runningHash: parsed.runningHash,
+    payload: parsed.payload,
+  };
 }

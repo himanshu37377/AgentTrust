@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { fetchExecutionHistory, type ExecutionHistoryEntry } from "@/lib/hedera";
+import { fetchExecutionAuditTrail, fetchExecutionHistory, type ExecutionAuditTrail, type ExecutionHistoryEntry } from "@/lib/hedera";
 
 const fallbackExecutions: ExecutionHistoryEntry[] = [
   {
@@ -62,24 +62,10 @@ const fallbackExecutions: ExecutionHistoryEntry[] = [
     description: "Stake deposited for agent",
     detailJson: JSON.stringify({ agent: "RiskAnalyzer", amount: "500 HBAR" }, null, 2),
   },
-  {
-    id: "fallback-5",
-    txHash: "0x9f11a282e1d4",
-    source: "HCS",
-    eventType: "HCS_EVENT",
-    entity: "Protocol",
-    eventClass: "HCS",
-    eventColor: "text-slate-300",
-    outcome: "Logged",
-    outcomeColor: "text-slate-300",
-    timestampLabel: "15:58:22",
-    timestampValue: Date.now() - 340000,
-    description: "ExecutionSubmitted -> Execution #82906 for Agent #7",
-    detailJson: JSON.stringify({ message: "ExecutionSubmitted -> Execution #82906 for Agent #7" }, null, 2),
-  },
 ];
 
-const filters = ["All", "Validation", "Reputation", "Staking", "AgentRegistry", "HCS", "Accepted", "Rejected"];
+const filters = ["All", "Validation", "Reputation", "Staking", "AgentRegistry", "Accepted", "Rejected"];
+const PAGE_SIZE = 15;
 
 export default function ExecutionsPage() {
   const [activeFilter, setActiveFilter] = useState("All");
@@ -87,6 +73,8 @@ export default function ExecutionsPage() {
   const [search, setSearch] = useState("");
   const [historyEntries, setHistoryEntries] = useState<ExecutionHistoryEntry[]>(fallbackExecutions);
   const [isLoading, setIsLoading] = useState(true);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [auditTrail, setAuditTrail] = useState<ExecutionAuditTrail | null>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -124,7 +112,7 @@ export default function ExecutionsPage() {
         if (!haystack.includes(search.toLowerCase())) return false;
       }
       if (activeFilter === "All") return true;
-      if (["Validation", "Reputation", "Staking", "AgentRegistry", "HCS"].includes(activeFilter)) {
+      if (["Validation", "Reputation", "Staking", "AgentRegistry"].includes(activeFilter)) {
         return entry.eventClass === activeFilter;
       }
       if (activeFilter === "Accepted") return entry.outcome.toLowerCase().includes("accepted");
@@ -133,14 +121,53 @@ export default function ExecutionsPage() {
     });
   }, [activeFilter, historyEntries, search]);
 
-  useEffect(() => {
-    if (filtered.length === 0) return;
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const paginatedEntries = useMemo(() => {
+    const startIndex = (currentPage - 1) * PAGE_SIZE;
+    return filtered.slice(startIndex, startIndex + PAGE_SIZE);
+  }, [currentPage, filtered]);
 
-    const selectedInFiltered = filtered.some((entry) => entry.id === selectedExecution.id);
-    if (!selectedInFiltered) {
-      setSelectedExecution(filtered[0]);
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [activeFilter, search]);
+
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
     }
-  }, [filtered, selectedExecution.id]);
+  }, [currentPage, totalPages]);
+
+  useEffect(() => {
+    if (paginatedEntries.length === 0) return;
+
+    const selectedInPage = paginatedEntries.some((entry) => entry.id === selectedExecution.id);
+    if (!selectedInPage) {
+      setSelectedExecution(paginatedEntries[0]);
+    }
+  }, [paginatedEntries, selectedExecution.id]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadAuditTrail = async () => {
+      try {
+        const nextAuditTrail = await fetchExecutionAuditTrail(selectedExecution);
+        if (isMounted) {
+          setAuditTrail(nextAuditTrail);
+        }
+      } catch {
+        if (isMounted) {
+          setAuditTrail(null);
+        }
+      }
+    };
+
+    void loadAuditTrail();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [selectedExecution]);
 
   const parsedEventDetail = useMemo(() => {
     try {
@@ -169,11 +196,12 @@ export default function ExecutionsPage() {
           description: selectedExecution.description,
         },
         emittedArgs: parsedEventDetail,
+        ...(auditTrail ? { auditTrail } : {}),
       },
       null,
       2,
     );
-  }, [parsedEventDetail, selectedExecution]);
+  }, [auditTrail, parsedEventDetail, selectedExecution]);
 
   return (
     <div className="relative z-10 max-w-[1280px] mx-auto px-6 py-10">
@@ -240,9 +268,9 @@ export default function ExecutionsPage() {
       </section>
 
       {/* Table + Panel */}
-      <div className="grid grid-cols-1 lg:grid-cols-[2.15fr_1fr] gap-[28px]" style={{ alignItems: "stretch" }}>
+      <div className="grid grid-cols-1 gap-[28px] lg:grid-cols-[minmax(0,2.15fr)_minmax(320px,1fr)]" style={{ alignItems: "stretch" }}>
         <div
-          className="glass-effect rounded-twelve flex flex-col overflow-hidden border border-white/10 shadow-[0_20px_80px_rgba(76,92,255,0.12)]"
+          className="glass-effect min-w-0 rounded-twelve flex flex-col overflow-hidden border border-white/10 shadow-[0_20px_80px_rgba(76,92,255,0.12)]"
           style={{ minHeight: 760 }}
         >
           <div className="h-1 w-full bg-gradient-to-r from-trust-accent-blue/90 via-brand-primary/80 to-trust-accent-purple/70" />
@@ -264,7 +292,7 @@ export default function ExecutionsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/5 text-sm bg-gradient-to-b from-white/[0.03] to-transparent">
-                {filtered.map((ex) => (
+                {paginatedEntries.map((ex) => (
                   <tr
                     key={ex.id}
                     className={`transition-all duration-200 cursor-pointer ${
@@ -307,7 +335,7 @@ export default function ExecutionsPage() {
                     </td>
                   </tr>
                 ))}
-                {filtered.length === 0 && !isLoading && (
+                {paginatedEntries.length === 0 && !isLoading && (
                   <tr>
                     <td colSpan={5} className="px-6 py-6 text-center text-slate-500">
                       No events found for the current filters.
@@ -319,13 +347,23 @@ export default function ExecutionsPage() {
           </div>
           <div className="px-6 py-4 border-t border-white/5 flex items-center justify-between mt-auto">
             <span className="text-xs text-slate-500">
-              Showing 1-{Math.min(filtered.length, 15)} of {filtered.length} events
+              {filtered.length === 0
+                ? "Showing 0 of 0 events"
+                : `Showing ${(currentPage - 1) * PAGE_SIZE + 1}-${Math.min(currentPage * PAGE_SIZE, filtered.length)} of ${filtered.length} events`}
             </span>
             <div className="flex gap-2">
-              <button className="p-2 rounded hover:bg-white/5 text-slate-400 transition-colors">
+              <button
+                className="p-2 rounded hover:bg-white/5 text-slate-400 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
+                disabled={currentPage === 1}
+              >
                 <span className="material-symbols-outlined text-sm">chevron_left</span>
               </button>
-              <button className="p-2 rounded hover:bg-white/5 text-slate-400 transition-colors">
+              <button
+                className="p-2 rounded hover:bg-white/5 text-slate-400 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}
+                disabled={currentPage === totalPages}
+              >
                 <span className="material-symbols-outlined text-sm">chevron_right</span>
               </button>
             </div>
@@ -333,12 +371,14 @@ export default function ExecutionsPage() {
         </div>
 
         {/* Right Panel */}
-        <div className="flex flex-col gap-6" style={{ minHeight: 760 }}>
+        <div className="min-w-0 flex flex-col gap-6" style={{ minHeight: 760 }}>
           {/* Inspection */}
-          <div className="glass-effect rounded-twelve p-6 bg-gradient-to-br from-brand-primary/10 via-indigo-500/5 to-transparent border-brand-primary/30 shadow-[0_20px_60px_rgba(76,92,255,0.14)] flex flex-col">
+          <div className="glass-effect min-w-0 rounded-twelve p-6 bg-gradient-to-br from-brand-primary/10 via-indigo-500/5 to-transparent border-brand-primary/30 shadow-[0_20px_60px_rgba(76,92,255,0.14)] flex flex-col">
             <div className="flex items-center justify-between mb-6">
-              <div>
-                <h4 className="text-sm font-bold text-white uppercase tracking-wider">Inspection: {selectedExecution.eventType}</h4>
+              <div className="min-w-0">
+                <h4 className="text-sm font-bold text-white uppercase tracking-wider break-words">
+                  Inspection: {selectedExecution.eventType}
+                </h4>
                 <p className="text-[10px] text-slate-500 font-mono mt-1 break-all">TX: {selectedExecution.txHash}</p>
               </div>
               <span className={`px-2 py-1 rounded text-[10px] font-bold border ${selectedExecution.outcomeColor} border-white/10 bg-white/5`}>
@@ -406,16 +446,19 @@ export default function ExecutionsPage() {
           </div>
 
           {/* Timeline */}
-          <div className="glass-effect rounded-twelve overflow-hidden flex flex-col flex-grow border border-white/10 shadow-[0_20px_60px_rgba(46,88,255,0.1)]" style={{ minHeight: 360 }}>
+          <div
+            className="glass-effect rounded-twelve overflow-hidden flex flex-col flex-grow border border-white/10 shadow-[0_20px_60px_rgba(46,88,255,0.1)]"
+            style={{ height: 360, minHeight: 360, maxHeight: 360 }}
+          >
             <div className="px-4 py-3 border-b border-white/10 flex items-center justify-between bg-gradient-to-r from-white/10 to-transparent">
               <h3 className="text-xs font-bold text-white uppercase tracking-widest flex items-center gap-2">
                 <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" /> Timeline
               </h3>
               <span className="text-[10px] font-mono text-slate-500">LIVE FEED</span>
             </div>
-            <div className="bg-black/45 p-4 font-mono text-xs space-y-4 relative flex-grow">
+            <div className="bg-black/45 p-4 font-mono text-xs space-y-4 relative flex-grow overflow-y-auto">
               <div className="scanline" />
-              {(filtered.length ? filtered : fallbackExecutions)
+              {(paginatedEntries.length ? paginatedEntries : fallbackExecutions)
                 .slice(0, 4)
                 .map((entry) => (
                   <button

@@ -25,6 +25,17 @@ npm install
 npm run dev
 ```
 
+For metadata uploads in local dev, the app defaults to `POST /metadata/upload`, which Vite proxies to `http://localhost:3001`.
+The deterministic verifier UI also expects the relayer agent server to expose `POST /api/verify`.
+Use `VITE_METADATA_UPLOAD_URL` only for the upload API endpoint. `VITE_IPFS_GATEWAY_URL` is for reading pinned IPFS content after upload, not for the JSON upload POST itself.
+Start the upload/verifier server from the `hcs-relayer` workspace with valid `PINATA_JWT` and `OPENAI_API_KEY` values:
+
+```bash
+npm install
+cp .env.example .env
+npm run agent:start
+```
+
 ## Build for production
 
 ```bash

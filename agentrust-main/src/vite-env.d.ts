@@ -6,6 +6,8 @@ interface ImportMetaEnv {
   readonly VITE_HEDERA_CHAIN_ID?: string;
   readonly VITE_HEDERA_NETWORK_NAME?: string;
   readonly VITE_HEDERA_BLOCK_EXPLORER_URL?: string;
+  readonly VITE_IPFS_GATEWAY_URL?: string;
+  readonly VITE_METADATA_UPLOAD_URL?: string;
   readonly VITE_AGENT_REGISTRY_ADDRESS?: string;
   readonly VITE_REPUTATION_REGISTRY_ADDRESS?: string;
   readonly VITE_VALIDATION_REGISTRY_ADDRESS?: string;

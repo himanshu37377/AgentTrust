@@ -30,6 +30,8 @@ type ExecutionItem = {
   outputSchema: string;
   reasoning: string;
   output: string;
+  createdAt?: number;
+  expiresAt?: number;
 };
 
 const pendingExecutions: ExecutionItem[] = [
@@ -101,6 +103,7 @@ const protocolLogs = [
   { time: "16:03:12", text: "ConsensusReached -> Execution #41 under review", color: "text-amber-400" },
   { time: "16:03:45", text: "Sync complete -> Block #2,941,202", color: "text-slate-400" },
 ];
+const VALIDATOR_REVIEW_STORAGE_KEY = "agentrust.pending-validator-executions";
 
 const riskLevelMeta: Record<string, { label: string; badgeClass: string; cardClass: string; textClass: string }> = {
   "0": {
@@ -123,6 +126,65 @@ const riskLevelMeta: Record<string, { label: string; badgeClass: string; cardCla
   },
 };
 
+function getAccuracyMeta(score: number) {
+  if (score >= 80) {
+    return {
+      label: "High accuracy",
+      insight: "Reliable validator",
+      badgeClass: "border-emerald-400/30 bg-emerald-500/12 text-emerald-200",
+      panelClass: "border-emerald-400/15 bg-gradient-to-br from-emerald-500/12 to-transparent",
+      valueClass: "text-emerald-200",
+      progressClass: "from-emerald-400 via-teal-300 to-cyan-300",
+    };
+  }
+
+  if (score >= 50) {
+    return {
+      label: "Watch accuracy",
+      insight: "Mixed validator reliability",
+      badgeClass: "border-amber-400/30 bg-amber-500/12 text-amber-200",
+      panelClass: "border-amber-400/15 bg-gradient-to-br from-amber-500/12 to-transparent",
+      valueClass: "text-amber-200",
+      progressClass: "from-amber-300 via-yellow-200 to-orange-300",
+    };
+  }
+
+  return {
+    label: "Low accuracy",
+    insight: "Risky validator",
+    badgeClass: "border-rose-400/30 bg-rose-500/12 text-rose-200",
+    panelClass: "border-rose-400/15 bg-gradient-to-br from-rose-500/12 to-transparent",
+    valueClass: "text-rose-200",
+    progressClass: "from-rose-400 via-red-300 to-orange-300",
+  };
+}
+
+function formatHbarLabel(value: string) {
+  const amount = Number(value);
+
+  if (!Number.isFinite(amount)) {
+    return value;
+  }
+
+  if (amount === 0) {
+    return "0";
+  }
+
+  if (amount >= 1) {
+    return amount % 1 === 0 ? String(amount) : amount.toFixed(2).replace(/\.?0+$/, "");
+  }
+
+  return amount.toFixed(6).replace(/\.?0+$/, "");
+}
+
+function formatValidatorId(validatorId?: number) {
+  if (!validatorId) {
+    return "VAL-0000";
+  }
+
+  return `VAL-${String(validatorId).padStart(4, "0")}`;
+}
+
 export default function ValidatorsPage() {
   const [showValidatorModal, setShowValidatorModal] = useState(false);
   const [showUnregisterModal, setShowUnregisterModal] = useState(false);
@@ -137,18 +199,23 @@ export default function ValidatorsPage() {
   const [isRegisteringValidator, setIsRegisteringValidator] = useState(false);
   const [validatorProfile, setValidatorProfile] = useState<ValidatorProfile | null>(null);
   const [isValidatorProfileLoading, setIsValidatorProfileLoading] = useState(true);
-  const [stakeRequirement, setStakeRequirement] = useState("100");
+  const [stakeRequirement, setStakeRequirement] = useState<string | null>(null);
+  const [runtimeExecutions, setRuntimeExecutions] = useState<ExecutionItem[]>([]);
   const validationsPerPage = 3;
   const isWalletConnected = Boolean(validatorProfile?.address);
   const hasValidatorAccess = Boolean(validatorProfile?.isRegistered && isWalletConnected);
+  const allPendingExecutions = [...runtimeExecutions, ...pendingExecutions];
 
-  const totalValidationPages = Math.max(1, Math.ceil(pendingExecutions.length / validationsPerPage));
-  const currentExecutions = pendingExecutions.slice(
+  const totalValidationPages = Math.max(1, Math.ceil(allPendingExecutions.length / validationsPerPage));
+  const currentExecutions = allPendingExecutions.slice(
     currentValidationPage * validationsPerPage,
     currentValidationPage * validationsPerPage + validationsPerPage
   );
   const validationStart = currentValidationPage * validationsPerPage + 1;
-  const validationEnd = Math.min((currentValidationPage + 1) * validationsPerPage, pendingExecutions.length);
+  const validationEnd = Math.min((currentValidationPage + 1) * validationsPerPage, allPendingExecutions.length);
+  const accuracyScore = validatorProfile?.accuracyScore ?? 0;
+  const accuracyMeta = getAccuracyMeta(accuracyScore);
+  const displayedStakeRequirement = stakeRequirement ?? "0";
 
   useEffect(() => {
     let isMounted = true;
@@ -182,28 +249,74 @@ export default function ValidatorsPage() {
   }, []);
 
   useEffect(() => {
+    const syncRuntimeExecutions = () => {
+      try {
+        const raw = window.localStorage.getItem(VALIDATOR_REVIEW_STORAGE_KEY);
+        const parsed = raw ? JSON.parse(raw) : [];
+        if (!Array.isArray(parsed)) {
+          setRuntimeExecutions([]);
+          return;
+        }
+
+        const now = Date.now();
+        const activeExecutions = parsed.filter((execution) => {
+          if (!execution || typeof execution !== "object") {
+            return false;
+          }
+
+          if (typeof execution.expiresAt !== "number") {
+            return true;
+          }
+
+          return execution.expiresAt > now;
+        });
+
+        if (activeExecutions.length !== parsed.length) {
+          window.localStorage.setItem(VALIDATOR_REVIEW_STORAGE_KEY, JSON.stringify(activeExecutions));
+        }
+
+        setRuntimeExecutions(activeExecutions);
+      } catch {
+        setRuntimeExecutions([]);
+      }
+    };
+
+    syncRuntimeExecutions();
+    window.addEventListener("storage", syncRuntimeExecutions);
+    window.addEventListener("focus", syncRuntimeExecutions);
+
+    return () => {
+      window.removeEventListener("storage", syncRuntimeExecutions);
+      window.removeEventListener("focus", syncRuntimeExecutions);
+    };
+  }, []);
+
+  useEffect(() => {
     let isMounted = true;
 
     const loadValidatorProfile = async () => {
       setIsValidatorProfileLoading(true);
 
-      try {
-        const [profile, requirement] = await Promise.all([
-          fetchConnectedValidatorProfile(),
-          fetchValidatorStakeRequirement().catch(() => "100"),
-        ]);
+      const [profileResult, requirementResult] = await Promise.allSettled([
+        fetchConnectedValidatorProfile(),
+        fetchValidatorStakeRequirement(),
+      ]);
 
-        if (!isMounted) return;
-        setValidatorProfile(profile);
-        setStakeRequirement(requirement);
-      } catch {
-        if (!isMounted) return;
+      if (!isMounted) return;
+
+      if (profileResult.status === "fulfilled") {
+        setValidatorProfile(profileResult.value);
+      } else {
         setValidatorProfile(null);
-      } finally {
-        if (isMounted) {
-          setIsValidatorProfileLoading(false);
-        }
       }
+
+      if (requirementResult.status === "fulfilled") {
+        setStakeRequirement(requirementResult.value);
+      } else {
+        setStakeRequirement(null);
+      }
+
+      setIsValidatorProfileLoading(false);
     };
 
     void loadValidatorProfile();
@@ -224,11 +337,20 @@ export default function ValidatorsPage() {
     setVoteLoadingState((current) => ({ ...current, [voteKey]: true }));
 
     try {
-      const { hash } = await voteOnExecution(executionId, approve);
+      const { hash, finalized, accepted } = await voteOnExecution(executionId, approve);
       toast({
-        title: approve ? "Execution approved" : "Execution rejected",
-        description: `Vote submitted on-chain for execution #${executionId}. Tx: ${hash.slice(0, 10)}...`,
+        title: finalized ? "Execution finalized" : approve ? "Execution approved" : "Execution rejected",
+        description: finalized
+          ? `Execution #${executionId} finalized as ${accepted ? "accepted" : "rejected"}. Tx: ${hash.slice(0, 10)}...`
+          : `Vote submitted on-chain for execution #${executionId}. Tx: ${hash.slice(0, 10)}...`,
       });
+      if (finalized) {
+        setRuntimeExecutions((current) => {
+          const next = current.filter((execution) => execution.id !== executionId);
+          window.localStorage.setItem(VALIDATOR_REVIEW_STORAGE_KEY, JSON.stringify(next));
+          return next;
+        });
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unable to submit vote";
       toast({
@@ -295,6 +417,15 @@ export default function ValidatorsPage() {
   };
 
   const handleRegisterValidator = async () => {
+    if (!stakeRequirement) {
+      toast({
+        title: "Stake requirement unavailable",
+        description: "Unable to load the current validator stake requirement from the contract.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setIsRegisteringValidator(true);
 
     try {
@@ -346,12 +477,12 @@ export default function ValidatorsPage() {
           {[
             { label: "Total Validators", value: "27" },
             { label: "Active Validators", value: "24" },
-            { label: "Pending Reviews", value: `${pendingExecutions.length}` },
-            { label: "Consensus Threshold", value: "66%" },
+            { label: "Pending Reviews", value: `${allPendingExecutions.length}` },
+            { label: "Your Accuracy", value: `${accuracyScore} / 100`, valueClass: accuracyMeta.valueClass },
           ].map((s) => (
             <div key={s.label} className="stat-card-refined p-[22px] rounded-[14px] hover:translate-y-[-4px] transition-all duration-300 min-h-[120px]">
               <p className="text-[13px] font-medium uppercase tracking-[0.8px] mb-3" style={{ color: "rgba(170,190,220,0.75)" }}>{s.label}</p>
-              <p className="text-[32px] font-semibold" style={{ color: "#e8ecff" }}>{s.value}</p>
+              <p className={`text-[32px] font-semibold ${s.valueClass ?? ""}`} style={{ color: s.valueClass ? undefined : "#e8ecff" }}>{s.value}</p>
             </div>
           ))}
         </section>
@@ -364,7 +495,7 @@ export default function ValidatorsPage() {
                 <p className="mt-2 text-sm text-slate-400">Expand a card to inspect reasoning, output, and hashes before opening the final review modal.</p>
               </div>
               <span className="px-3 py-1 bg-white/5 rounded-lg text-[11px] font-semibold text-slate-400 border border-white/10 shrink-0">
-                {pendingExecutions.length} Actions Required
+                {allPendingExecutions.length} Actions Required
               </span>
             </div>
 
@@ -447,45 +578,70 @@ export default function ValidatorsPage() {
 
                     {isExpanded && (
                       <div className="mt-6 grid grid-cols-1 gap-4 border-t border-white/5 pt-6">
-                        <div className="rounded-xl border border-white/5 bg-slate-950/50 p-5">
-                          <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500 mb-3">Expected Reasoning</p>
-                          <p className="text-sm leading-relaxed text-slate-300">{execution.expectedReasoning}</p>
+                        <div className="rounded-xl border border-white/5 bg-slate-950/50 p-4">
+                          <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500 mb-2">Expected Reasoning</p>
+                          <div className="max-h-[3.2rem] overflow-y-auto overflow-x-hidden pr-2 custom-scrollbar">
+                            <p className="text-sm leading-relaxed text-slate-300">{execution.expectedReasoning}</p>
+                          </div>
                         </div>
 
-                        <div className="rounded-xl border border-white/5 bg-slate-950/50 p-5 overflow-x-auto">
-                          <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500 mb-3">Output Schema</p>
-                          <pre className="text-[13px] font-mono text-cyan-300/90 whitespace-pre-wrap break-words">{execution.outputSchema}</pre>
+                        <div className="rounded-xl border border-white/5 bg-slate-950/50 p-4">
+                          <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500 mb-2">Output Schema</p>
+                          <div className="max-h-[3.2rem] overflow-y-auto overflow-x-hidden pr-2 custom-scrollbar">
+                            <pre className="text-[13px] font-mono text-cyan-300/90 whitespace-pre-wrap break-words">{execution.outputSchema}</pre>
+                          </div>
                         </div>
 
-                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                          <div className="rounded-xl border border-white/5 bg-slate-950/50 p-5">
-                            <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500 mb-3">Execution Context</p>
-                            <dl className="space-y-2 text-sm text-slate-300">
-                              <div className="flex items-center justify-between gap-4">
-                                <dt className="text-slate-400">Parent Execution ID</dt>
-                                <dd className="font-medium text-white">{execution.parentExecutionId}</dd>
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-stretch">
+                          <div
+                            className="rounded-xl border pt-4 pb-2 px-3.5 h-full"
+                            style={{
+                              background:
+                                "radial-gradient(circle at top right, rgba(56,189,248,0.12), transparent 34%), linear-gradient(180deg, rgba(10,15,27,0.92), rgba(6,10,20,0.96))",
+                              borderColor: "rgba(56, 189, 248, 0.18)",
+                              boxShadow: "0 0 26px rgba(14, 165, 233, 0.08)",
+                            }}
+                          >
+                            <div className="mb-2.5">
+                              <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-cyan-300/85">Execution Context</p>
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                              <div className="rounded-lg border border-white/8 bg-white/[0.03] px-2.5 py-2">
+                                <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500 mb-0.5">Parent Execution</p>
+                                <p className="text-base font-semibold text-white">{execution.parentExecutionId}</p>
                               </div>
-                              <div className="flex items-center justify-between gap-4">
-                                <dt className="text-slate-400">Caller Agent ID</dt>
-                                <dd className="font-medium text-white">{execution.callerAgentId}</dd>
+                              <div className="rounded-lg border border-white/8 bg-white/[0.03] px-2.5 py-2">
+                                <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500 mb-0.5">Caller Agent</p>
+                                <p className="text-base font-semibold text-white">{execution.callerAgentId}</p>
                               </div>
-                              <div className="flex items-center justify-between gap-4">
-                                <dt className="text-slate-400">External Call</dt>
-                                <dd className="font-medium text-white">{execution.involvesExternalCall ? "Yes" : "No"}</dd>
+                              <div className="rounded-lg border border-white/8 bg-white/[0.03] px-2.5 py-2">
+                                <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500 mb-0.5">External Call</p>
+                                <p className={`text-sm font-semibold ${execution.involvesExternalCall ? "text-amber-200" : "text-emerald-200"}`}>
+                                  {execution.involvesExternalCall ? "Yes" : "No"}
+                                </p>
                               </div>
-                              <div className="flex items-center justify-between gap-4">
-                                <dt className="text-slate-400">External Service</dt>
-                                <dd className="font-medium text-white text-right">{execution.externalService}</dd>
+                              <div className="rounded-lg border border-white/8 bg-white/[0.03] px-2.5 py-2">
+                                <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500 mb-0.5">External Service</p>
+                                <p className="text-sm font-semibold text-white break-words">
+                                  {execution.externalService || "None"}
+                                </p>
                               </div>
-                            </dl>
+                            </div>
                           </div>
-                          <div className="rounded-xl border border-white/5 bg-slate-950/50 p-5">
-                            <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500 mb-3">Reasoning</p>
-                            <p className="text-sm leading-relaxed text-slate-300">{execution.reasoning}</p>
+
+                          <div className="rounded-xl border border-white/5 bg-slate-950/50 p-3.5 h-full flex flex-col">
+                            <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500 mb-2">Reasoning</p>
+                            <div className="max-h-[7.0rem] overflow-y-auto overflow-x-hidden pr-2 custom-scrollbar">
+                              <p className="text-sm leading-relaxed text-slate-300">{execution.reasoning}</p>
+                            </div>
                           </div>
-                          <div className="rounded-xl border border-white/5 bg-slate-950/50 p-5 overflow-x-auto">
-                            <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500 mb-3">Output</p>
-                            <pre className="text-[13px] font-mono text-emerald-300/90 whitespace-pre-wrap break-words">{execution.output}</pre>
+
+                          <div className="lg:col-span-2 rounded-xl border border-emerald-400/10 bg-gradient-to-br from-emerald-500/10 via-emerald-500/5 to-transparent px-4 py-3 shadow-[0_0_28px_rgba(16,185,129,0.08)]">
+                            <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500 mb-2">Output</p>
+                            <div className="max-h-[2.5rem] overflow-y-auto overflow-x-hidden pr-2 custom-scrollbar">
+                              <pre className="text-[13px] font-mono text-emerald-300/90 whitespace-pre-wrap break-words">{execution.output}</pre>
+                            </div>
                           </div>
                         </div>
                       </div>
@@ -497,7 +653,7 @@ export default function ValidatorsPage() {
 
             <div className="px-1 pt-1 border-t border-white/5 flex items-center justify-between gap-4">
               <span className="text-sm font-medium text-slate-200">
-                Showing {validationStart}-{validationEnd} of {pendingExecutions.length} validation requests
+                Showing {validationStart}-{validationEnd} of {allPendingExecutions.length} validation requests
               </span>
               <div className="flex items-center gap-2">
                 <button
@@ -523,7 +679,10 @@ export default function ValidatorsPage() {
 
           <aside className="flex flex-col self-stretch xl:sticky xl:top-12">
             <div className="hidden xl:block h-[98px] shrink-0" aria-hidden="true" />
-            <div className="glass-card rounded-2xl border border-white/5 flex flex-col flex-1" style={{ background: "rgba(10, 14, 23, 0.95)", minHeight: 0 }}>
+            <div
+              className="glass-card rounded-2xl border border-white/5 flex flex-col flex-1"
+              style={{ background: "rgba(10, 14, 23, 0.95)", height: 560, minHeight: 560, maxHeight: 560 }}
+            >
               <div className="p-5 border-b border-white/5 flex items-center justify-between">
                 <h3 className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">Protocol Logs</h3>
                 <div className="flex gap-1.5">
@@ -532,7 +691,7 @@ export default function ValidatorsPage() {
                   <span className="w-2.5 h-2.5 rounded-full bg-emerald-500/20 border border-emerald-500/40" />
                 </div>
               </div>
-              <div className="p-5 font-mono text-[12px] leading-[1.65] flex-grow overflow-y-auto console-scroll space-y-3 overflow-x-auto">
+              <div className="p-5 font-mono text-[12px] leading-[1.65] flex-grow min-h-0 overflow-y-auto console-scroll space-y-3 overflow-x-auto">
                 {logsLoading && liveProtocolLogs.length === 0 ? (
                   <div className="text-slate-500">Loading protocol logs...</div>
                 ) : (
@@ -610,7 +769,7 @@ export default function ValidatorsPage() {
                 <div className="mt-4 space-y-3">
                   {[
                     "Connect your Hedera wallet in the navigation bar.",
-                    `Stake at least ${stakeRequirement.split(".")[0]} HBAR and register as validator.`,
+                    `Stake at least ${formatHbarLabel(displayedStakeRequirement)} HBAR and register as validator.`,
                     "Return to this page to review and vote on pending executions.",
                   ].map((step, index) => (
                     <div key={step} className="flex items-start gap-3 rounded-xl border border-white/10 bg-white/[0.02] p-3">
@@ -630,31 +789,26 @@ export default function ValidatorsPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="modal-overlay absolute inset-0" onClick={() => setShowValidatorModal(false)} />
           <div
-            className="relative w-full max-w-lg overflow-hidden rounded-[24px] border border-white/10 shadow-2xl"
+            className="relative w-full max-w-[520px] overflow-hidden rounded-[24px] border border-white/10 shadow-2xl max-h-[calc(100vh-2rem)]"
             style={{
               background: "linear-gradient(180deg, rgba(18, 24, 46, 0.97), rgba(11, 17, 31, 0.97))",
               boxShadow: "0 30px 80px rgba(0,0,0,0.45), 0 0 30px rgba(88,110,255,0.18)",
             }}
           >
             <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-trust-accent-blue/70 to-transparent" />
-            <div className="p-6 pb-4 border-b border-white/10">
+            <div className="p-5 pb-4 border-b border-white/10">
               <div className="flex items-start justify-between gap-4">
                 <div className="flex items-center gap-4">
-                  <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-trust-accent-blue/20 bg-trust-accent-blue/10 shadow-[0_0_24px_rgba(79,140,255,0.18)]">
-                    <span className="material-symbols-outlined text-[24px] text-trust-accent-blue">shield_person</span>
+                  <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-trust-accent-blue/20 bg-trust-accent-blue/10 shadow-[0_0_20px_rgba(79,140,255,0.16)]">
+                    <span className="material-symbols-outlined text-[22px] text-trust-accent-blue">shield_person</span>
                   </div>
                   <div>
                     <p className="text-[11px] font-black uppercase tracking-[0.24em] text-trust-accent-blue/90">
                       {validatorProfile?.isRegistered ? "Validator Console" : "Consensus Access"}
                     </p>
-                    <h2 className="mt-1 text-[24px] font-bold tracking-tight text-white">
+                    <h2 className="mt-1 text-[22px] font-bold tracking-tight text-white">
                       {validatorProfile?.isRegistered ? "Manage Validator" : "Become a Validator"}
                     </h2>
-                    <p className="mt-1.5 text-[13px] leading-relaxed text-slate-400">
-                      {validatorProfile?.isRegistered
-                        ? "Review your validator status, top up stake, and manage exit actions from one place."
-                        : "Join the network and help verify AI execution traces through decentralized consensus."}
-                    </p>
                   </div>
                 </div>
                 <button className="rounded-full p-2 transition-colors hover:bg-white/5" onClick={() => setShowValidatorModal(false)}>
@@ -662,36 +816,66 @@ export default function ValidatorsPage() {
                 </button>
               </div>
             </div>
-            <div className="p-6 space-y-6">
-              <div className="rounded-[20px] border border-trust-accent-blue/20 bg-gradient-to-r from-trust-accent-blue/10 to-trust-accent-purple/10 p-5 shadow-inner">
-                <div className="flex items-end justify-between gap-6">
-                  <div>
-                    <p className="text-xs font-bold uppercase tracking-[0.22em] text-trust-accent-blue mb-2">
+            <div className="p-5 space-y-4 overflow-y-auto max-h-[calc(100vh-9rem)]">
+              <div className="rounded-[18px] border border-trust-accent-blue/20 bg-gradient-to-r from-trust-accent-blue/10 to-trust-accent-purple/10 px-4 py-4 shadow-inner">
+                <div className="flex items-center justify-between gap-4">
+                  <div className="min-w-0">
+                    <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-trust-accent-blue mb-1.5">
                       {validatorProfile?.isRegistered ? "Current Stake" : "Staking Requirement"}
                     </p>
-                    <div className="text-[34px] font-bold tracking-tight text-white">
-                      {(validatorProfile?.isRegistered ? validatorProfile.stakedAmount : stakeRequirement).split(".")[0]} HBAR
+                    <div className="text-[28px] leading-none font-bold tracking-tight text-white">
+                      {formatHbarLabel(validatorProfile?.isRegistered ? validatorProfile.stakedAmount : displayedStakeRequirement)} HBAR
                     </div>
                   </div>
-                  <div className="rounded-full border border-emerald-400/20 bg-emerald-400/10 px-4 py-2 text-[11px] font-bold uppercase tracking-[0.18em] text-emerald-300">
+                  <div className="shrink-0 rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.18em] text-emerald-300">
                     {validatorProfile?.isRegistered ? "Active Validator" : "Validator Tier"}
                   </div>
                 </div>
               </div>
               {validatorProfile?.isRegistered ? (
                 <div className="space-y-4">
-                  <div className="rounded-2xl border border-white/5 bg-white/[0.03] px-4 py-4">
-                    <div className="flex items-center justify-between gap-4 mb-4">
-                      <div>
+                  <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
+                    <div className="grid grid-cols-[minmax(0,1fr)_110px] items-start gap-4 mb-4">
+                      <div className="min-w-0">
                         <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500 mb-2">Validator Wallet</p>
-                        <p className="text-sm font-semibold text-slate-200 break-all">{validatorProfile.address}</p>
+                        <p className="overflow-hidden text-ellipsis whitespace-nowrap font-mono text-[13px] font-semibold text-slate-100">
+                          {validatorProfile.address}
+                        </p>
                       </div>
                       <div className="text-right">
-                        <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500 mb-2">Reputation</p>
-                        <p className="text-sm font-semibold text-cyan-200">{validatorProfile.validatorReputation}</p>
+                        <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500 mb-2">Validator ID</p>
+                        <p className="text-sm font-semibold text-cyan-200">{formatValidatorId(validatorProfile.validatorId)}</p>
                       </div>
                     </div>
-                    <div className="relative">
+                    <div className={`rounded-[18px] border px-4 py-3.5 ${accuracyMeta.panelClass}`}>
+                      <div className="flex items-start justify-between gap-4">
+                        <div>
+                          <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500 mb-1.5">Accuracy Score</p>
+                          <p className={`text-[22px] font-bold leading-none ${accuracyMeta.valueClass}`}>{accuracyScore} / 100</p>
+                        </div>
+                        <div className={`rounded-full border px-2.5 py-1 text-[9px] font-bold uppercase tracking-[0.18em] ${accuracyMeta.badgeClass}`}>
+                          {accuracyMeta.label}
+                        </div>
+                      </div>
+                      <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/10">
+                        <div
+                          className={`h-full rounded-full bg-gradient-to-r ${accuracyMeta.progressClass}`}
+                          style={{ width: `${accuracyScore}%` }}
+                        />
+                      </div>
+                      <div className="mt-3 grid grid-cols-2 gap-2.5 text-sm">
+                        <div className="rounded-xl border border-emerald-400/15 bg-emerald-500/8 px-3 py-2.5">
+                          <p className="text-[9px] font-bold uppercase tracking-[0.18em] text-emerald-300/80">Correct Vote</p>
+                          <p className="mt-1.5 font-semibold text-emerald-200">+1 accuracy</p>
+                        </div>
+                        <div className="rounded-xl border border-rose-400/15 bg-rose-500/8 px-3 py-2.5">
+                          <p className="text-[9px] font-bold uppercase tracking-[0.18em] text-rose-300/80">Wrong Vote</p>
+                          <p className="mt-1.5 font-semibold text-rose-200">-2 penalty</p>
+                        </div>
+                      </div>
+                      <p className="mt-3 text-[13px] text-slate-300">{accuracyMeta.insight}</p>
+                    </div>
+                    <div className="relative mt-4">
                       <input
                         className="w-full rounded-[12px] px-4 py-3 text-sm text-white transition-all outline-none stake-input"
                         placeholder="Amount to add"
@@ -742,7 +926,7 @@ export default function ValidatorsPage() {
                     disabled={isRegisteringValidator}
                     className="w-full py-3 btn-primary-gradient rounded-xl text-white font-bold transition-all uppercase tracking-widest text-xs shadow-xl disabled:cursor-not-allowed disabled:brightness-75"
                   >
-                    {isRegisteringValidator ? "Registering..." : `Stake ${stakeRequirement.split(".")[0]} HBAR & Register`}
+                    {isRegisteringValidator ? "Registering..." : `Stake ${formatHbarLabel(displayedStakeRequirement)} HBAR & Register`}
                   </button>
                 </div>
               )}
