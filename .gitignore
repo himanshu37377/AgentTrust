@@ -12,3 +12,9 @@ docs/
 
 # Dotenv file
 .env
+
+# Local machine files
+.DS_Store
+
+# Local relayer config with operator credentials
+hcs-relayer/src/config.json
