@@ -87,9 +87,7 @@ contract ValidationRegistry {
     );
     event DeterministicExecutionVerified(uint256 indexed executionId, bool accepted);
     event VoteSubmitted(uint256 indexed executionId, address indexed validator, bool approve);
-    event ExecutionFinalized(
-        uint256 indexed executionId, bool accepted, uint256 approvals, uint256 rejections
-    );
+    event ExecutionFinalized(uint256 indexed executionId, bool accepted, uint256 approvals, uint256 rejections);
     event AgentRegistryUpdated(address indexed agentRegistry);
     event ReputationRegistryUpdated(address indexed reputationRegistry);
     event ValidatorStakeRequirementUpdated(uint256 oldRequirement, uint256 newRequirement);
@@ -98,11 +96,9 @@ contract ValidationRegistry {
     event ValidatorUnregistered(address indexed validator, uint256 refundedAmount);
     event ValidatorReputationUpdated(address indexed validator, uint256 oldReputation, uint256 newReputation);
 
-
-// X-----------------X-----------------X-----------------X-----------------X-----------------X-----------------X
-//                     MODIFIERS, CONSTRUCTOR, SETTER
-// X-----------------X-----------------X-----------------X-----------------X-----------------X-----------------X
-
+    // X-----------------X-----------------X-----------------X-----------------X-----------------X-----------------X
+    //                     MODIFIERS, CONSTRUCTOR, SETTER
+    // X-----------------X-----------------X-----------------X-----------------X-----------------X-----------------X
 
     modifier onlyOwner() {
         require(msg.sender == owner, "Only owner");
@@ -140,10 +136,9 @@ contract ValidationRegistry {
         emit ValidatorStakeRequirementUpdated(oldRequirement, _newRequirement);
     }
 
-// X-----------------X-----------------X-----------------X-----------------X-----------------X-----------------X
-//                   MAIN FUNCTIONS
-// X-----------------X-----------------X-----------------X-----------------X-----------------X-----------------X
-
+    // X-----------------X-----------------X-----------------X-----------------X-----------------X-----------------X
+    //                   MAIN FUNCTIONS
+    // X-----------------X-----------------X-----------------X-----------------X-----------------X-----------------X
 
     function registerValidator() external payable {
         ValidatorInfo storage validator = validators[msg.sender];
@@ -214,11 +209,7 @@ contract ValidationRegistry {
         string calldata externalService,
         bytes32 reasoningHash,
         bytes32 executionCommitment
-    )
-        public
-        pure
-        returns (bytes32)
-    {
+    ) public pure returns (bytes32) {
         return keccak256(
             abi.encode(
                 agentId,
@@ -241,10 +232,7 @@ contract ValidationRegistry {
         bytes32 executionCommitment,
         bytes32 reasoningHash,
         bool isDeterministic
-    )
-        external
-        returns (uint256 executionId, bytes32 executionHash)
-    {
+    ) external returns (uint256 executionId, bytes32 executionHash) {
         ExecutionInput memory input = ExecutionInput({
             agentId: agentId,
             parentExecutionId: parentExecutionId,
@@ -296,10 +284,9 @@ contract ValidationRegistry {
         _checkConsensus(executionId);
     }
 
-// X-----------------X-----------------X-----------------X-----------------X-----------------X-----------------X
-//                   EXTERNAL, INTERNAL FUNCTIONS
-// X-----------------X-----------------X-----------------X-----------------X-----------------X-----------------X
-
+    // X-----------------X-----------------X-----------------X-----------------X-----------------X-----------------X
+    //                   EXTERNAL, INTERNAL FUNCTIONS
+    // X-----------------X-----------------X-----------------X-----------------X-----------------X-----------------X
 
     function _checkConsensus(uint256 executionId) internal {
         Execution storage exec = executions[executionId];
@@ -344,8 +331,7 @@ contract ValidationRegistry {
 
             if (validatorVotes[executionId][validatorAddress] == accepted) {
                 uint256 increased = validator.accuracyScore + CORRECT_VOTE_REWARD;
-                validator.accuracyScore =
-                    increased > MAX_ACCURACY_SCORE ? MAX_ACCURACY_SCORE : increased;
+                validator.accuracyScore = increased > MAX_ACCURACY_SCORE ? MAX_ACCURACY_SCORE : increased;
             } else if (validator.accuracyScore <= INCORRECT_VOTE_PENALTY) {
                 validator.accuracyScore = 0;
             } else {
@@ -409,7 +395,9 @@ contract ValidationRegistry {
         }
 
         if (input.callerAgentId != 0) {
-            require(IAgentRegistry(agentRegistry).getAgent(input.callerAgentId).isRegistered, "Caller agent not registered");
+            require(
+                IAgentRegistry(agentRegistry).getAgent(input.callerAgentId).isRegistered, "Caller agent not registered"
+            );
         }
 
         executionHash = keccak256(
@@ -450,8 +438,8 @@ contract ValidationRegistry {
         );
     }
 
-     // for testing so native tokens do not get stuck
-     function withdrawAmount() external onlyOwner {
+    // for testing so native tokens do not get stuck
+    function withdrawAmount() external onlyOwner {
         uint256 bal = address(this).balance;
         require(bal > 0, "No balance");
 

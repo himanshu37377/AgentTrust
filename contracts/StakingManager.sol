@@ -45,11 +45,9 @@ contract StakingManager {
     error InvalidBountyBps();
     error NoBalance();
 
-
-// X-----------------X-----------------X-----------------X-----------------X-----------------X-----------------X
-//                   MODIFIERS, CONSTRUCTOR, SETTER
-// X-----------------X-----------------X-----------------X-----------------X-----------------X-----------------X
-
+    // X-----------------X-----------------X-----------------X-----------------X-----------------X-----------------X
+    //                   MODIFIERS, CONSTRUCTOR, SETTER
+    // X-----------------X-----------------X-----------------X-----------------X-----------------X-----------------X
 
     modifier onlyOwner() {
         if (msg.sender != owner) revert OnlyOwner();
@@ -78,10 +76,9 @@ contract StakingManager {
         emit MinTrustThresholdUpdated(_threshold);
     }
 
-// X-----------------X-----------------X-----------------X-----------------X-----------------X-----------------X
-//                      MAIN FUNCTIONS
-// X-----------------X-----------------X-----------------X-----------------X-----------------X-----------------X
-
+    // X-----------------X-----------------X-----------------X-----------------X-----------------X-----------------X
+    //                      MAIN FUNCTIONS
+    // X-----------------X-----------------X-----------------X-----------------X-----------------X-----------------X
 
     // Called by AgentRegistry at registration; stake custody stays in this contract.
     function stakeForAgent(uint256 agentId, address agentOwner, uint256 riskLevel) external payable onlyAgentRegistry {
@@ -151,10 +148,9 @@ contract StakingManager {
         return agentStakes[agentId].amount;
     }
 
-// X-----------------X-----------------X-----------------X-----------------X-----------------X-----------------X
-//                   EXTERNAL VIEW, INTERNAL FUNCTIONS
-// X-----------------X-----------------X-----------------X-----------------X-----------------X-----------------X
-
+    // X-----------------X-----------------X-----------------X-----------------X-----------------X-----------------X
+    //                   EXTERNAL VIEW, INTERNAL FUNCTIONS
+    // X-----------------X-----------------X-----------------X-----------------X-----------------X-----------------X
 
     function _slashFromTrust(uint256 agentId) internal {
         StakeInfo storage info = agentStakes[agentId];

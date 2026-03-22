@@ -22,10 +22,9 @@ contract AuthorizationManager {
     event AgentAuthorizedBatch(address indexed user, uint256 indexed agentId, uint256 capabilityCount);
     event AuthorizationRevoked(address indexed user, uint256 indexed agentId);
     event AgentRegistryUpdated(address indexed agentRegistry);
-// X-----------------X-----------------X-----------------X-----------------X-----------------X-----------------X
-//                   MODIFIERS, CONSTRUCTOR, SETTER
-// X-----------------X-----------------X-----------------X-----------------X-----------------X-----------------X
-
+    // X-----------------X-----------------X-----------------X-----------------X-----------------X-----------------X
+    //                   MODIFIERS, CONSTRUCTOR, SETTER
+    // X-----------------X-----------------X-----------------X-----------------X-----------------X-----------------X
 
     modifier onlyOwner() {
         require(msg.sender == owner, "Only owner");
@@ -42,10 +41,9 @@ contract AuthorizationManager {
         emit AgentRegistryUpdated(_agentRegistry);
     }
 
-// X-----------------X-----------------X-----------------X-----------------X-----------------X-----------------X
-//                     MAIN FUNCTIONS
-// X-----------------X-----------------X-----------------X-----------------X-----------------X-----------------X
-
+    // X-----------------X-----------------X-----------------X-----------------X-----------------X-----------------X
+    //                     MAIN FUNCTIONS
+    // X-----------------X-----------------X-----------------X-----------------X-----------------X-----------------X
 
     function authorizeAgent(uint256 agentId, uint32[] calldata skillIds) external {
         require(agentRegistry != address(0), "Agent registry not set");
@@ -95,10 +93,9 @@ contract AuthorizationManager {
         emit AuthorizationRevoked(msg.sender, agentId);
     }
 
-// X-----------------X-----------------X-----------------X-----------------X-----------------X-----------------X
-//                     EXTERNAL, INTERNAL FUNCTIONS
-// X-----------------X-----------------X-----------------X-----------------X-----------------X-----------------X
-  
+    // X-----------------X-----------------X-----------------X-----------------X-----------------X-----------------X
+    //                     EXTERNAL, INTERNAL FUNCTIONS
+    // X-----------------X-----------------X-----------------X-----------------X-----------------X-----------------X
 
     function checkPermission(address user, uint256 agentId, uint32 skillId) external view returns (bool) {
         require(user != address(0), "Invalid user");

@@ -169,9 +169,8 @@ contract ValidationRegistryTest is Test {
         bytes32 submittedExecutionCommitment = keccak256(abi.encode(input, "55", agentId));
         bytes32 expectedExecutionCommitment = keccak256(abi.encode(input, "56", agentId));
 
-        (uint256 executionId,) = validationRegistry.submitExecution(
-            agentId, 0, 0, false, "", submittedExecutionCommitment, bytes32(0), true
-        );
+        (uint256 executionId,) =
+            validationRegistry.submitExecution(agentId, 0, 0, false, "", submittedExecutionCommitment, bytes32(0), true);
 
         validationRegistry.verifyDeterministicExecution(executionId, expectedExecutionCommitment);
 
