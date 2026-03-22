@@ -7,6 +7,10 @@ on:
 
 env:
   FOUNDRY_PROFILE: ci
+  HTTP_PROXY: ""
+  HTTPS_PROXY: ""
+  ALL_PROXY: ""
+  NO_PROXY: "*"
 
 jobs:
   check:
@@ -36,5 +40,5 @@ jobs:
 
       - name: Run Forge tests
         run: |
-          forge test -vvv
+          forge test --offline -vvv
         id: test
