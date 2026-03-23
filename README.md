@@ -103,6 +103,14 @@ This ensures:
 
 ---
 
+## 📁 Quick Repo Guide
+
+- `agentrust-main` (`frontend`) — public React dashboard
+- `hcs-relayer` (`backend`) — agent API, verifier, metadata upload, and optional HCS relayer
+- `contracts` — Solidity protocol contracts on Hedera
+
+---
+
 ## 🔐 Key Features
 
 - **Session-Based Authorization**: Time-constrained authorization for protected capabilities through `AuthorizationManager`.
