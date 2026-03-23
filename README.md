@@ -97,8 +97,7 @@ This ensures:
 ## 📊 Pitch & Links
 
 - Pitch Deck: [Add link]
-- Demo Video: [Add link]
-- Repo: https://github.com/himanshu37377/AgentTrust
+- Demo Video: https://youtu.be/t1AwxHd4zoo
 
 ---
 
