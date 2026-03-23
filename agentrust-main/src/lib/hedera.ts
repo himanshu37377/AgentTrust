@@ -1268,8 +1268,29 @@ export async function fetchConnectedValidatorProfile(): Promise<ValidatorProfile
     VALIDATION_REGISTRY_ABI,
     provider,
   );
+
+  const normalizeValidatorTimestamps = (registeredAtValue: number, accuracyScoreValue: number) => {
+    // Some deployed validator registries expose the final two fields in the opposite order.
+    // If accuracy is impossible (>100) and the paired registeredAt looks like a score, swap them.
+    if (accuracyScoreValue > 100 && registeredAtValue >= 0 && registeredAtValue <= 100) {
+      return {
+        registeredAt: accuracyScoreValue,
+        accuracyScore: registeredAtValue,
+      };
+    }
+
+    return {
+      registeredAt: registeredAtValue,
+      accuracyScore: accuracyScoreValue,
+    };
+  };
+
   try {
     const validator = await validationRegistry.validators(account);
+    const normalized = normalizeValidatorTimestamps(
+      Number(validator.registeredAt),
+      Number(validator.accuracyScore),
+    );
 
     return {
       address: account,
@@ -1278,8 +1299,8 @@ export async function fetchConnectedValidatorProfile(): Promise<ValidatorProfile
       active: Boolean(validator.active),
       stakedAmount: formatUnits(validator.stakedAmount, 8),
       validatorReputation: Number(validator.validatorReputation),
-      registeredAt: Number(validator.registeredAt),
-      accuracyScore: Number(validator.accuracyScore),
+      registeredAt: normalized.registeredAt,
+      accuracyScore: normalized.accuracyScore,
     };
   } catch {
     const legacyValidationRegistry = new Contract(
@@ -1288,6 +1309,10 @@ export async function fetchConnectedValidatorProfile(): Promise<ValidatorProfile
       provider,
     );
     const validator = await legacyValidationRegistry.validators(account);
+    const normalized = normalizeValidatorTimestamps(
+      Number(validator.registeredAt),
+      Number(validator.accuracyScore),
+    );
 
     return {
       address: account,
@@ -1296,8 +1321,8 @@ export async function fetchConnectedValidatorProfile(): Promise<ValidatorProfile
       active: Boolean(validator.active),
       stakedAmount: formatUnits(validator.stakedAmount, 8),
       validatorReputation: Number(validator.validatorReputation),
-      registeredAt: Number(validator.registeredAt),
-      accuracyScore: Number(validator.accuracyScore),
+      registeredAt: normalized.registeredAt,
+      accuracyScore: normalized.accuracyScore,
     };
   }
 }
@@ -1608,7 +1633,7 @@ export async function fetchProtocolLogs(limit = 12): Promise<ProtocolLogEntry[]>
           case "ValidatorRegistered":
             mergedEntries.push({
               time,
-              text: `ValidatorRegistered -> ${shortenAddress(String(parsed.args.validator))} joined as ${parsed.args.validatorId.toString()} with ${formatUnits(parsed.args.stakedAmount, 18)} HBAR`,
+              text: `ValidatorRegistered -> ${shortenAddress(String(parsed.args.validator))} joined as ${parsed.args.validatorId.toString()} with ${formatUnits(parsed.args.stakedAmount, 8)} HBAR`,
               color: "text-emerald-400",
               sortValue,
               dedupeKey: `${log.transaction_hash ?? "tx"}-${index}-${parsed.name}`,
@@ -1617,7 +1642,7 @@ export async function fetchProtocolLogs(limit = 12): Promise<ProtocolLogEntry[]>
           case "ValidatorStakeToppedUp":
             mergedEntries.push({
               time,
-              text: `ValidatorStakeToppedUp -> ${shortenAddress(String(parsed.args.validator))} added ${formatUnits(parsed.args.amount, 18)} HBAR (total ${formatUnits(parsed.args.totalStake, 18)})`,
+              text: `ValidatorStakeToppedUp -> ${shortenAddress(String(parsed.args.validator))} added ${formatUnits(parsed.args.amount, 8)} HBAR (total ${formatUnits(parsed.args.totalStake, 8)})`,
               color: "text-amber-300",
               sortValue,
               dedupeKey: `${log.transaction_hash ?? "tx"}-${index}-${parsed.name}`,
@@ -1626,7 +1651,7 @@ export async function fetchProtocolLogs(limit = 12): Promise<ProtocolLogEntry[]>
           case "ValidatorUnregistered":
             mergedEntries.push({
               time,
-              text: `ValidatorUnregistered -> ${shortenAddress(String(parsed.args.validator))} refunded ${formatUnits(parsed.args.refundedAmount, 18)} HBAR`,
+              text: `ValidatorUnregistered -> ${shortenAddress(String(parsed.args.validator))} refunded ${formatUnits(parsed.args.refundedAmount, 8)} HBAR`,
               color: "text-rose-300",
               sortValue,
               dedupeKey: `${log.transaction_hash ?? "tx"}-${index}-${parsed.name}`,

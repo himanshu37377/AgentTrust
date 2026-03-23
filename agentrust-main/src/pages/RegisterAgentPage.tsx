@@ -118,6 +118,9 @@ const domainOptions = [
   "NLP Analysis",
   "Cross-chain Messaging",
   "Autonomous Governance",
+  "Quantitative Reasoning",
+  "Mathematical Computation",
+  "Numerical Analysis",
 ];
 
 const protocolLogInterface = new Interface([
