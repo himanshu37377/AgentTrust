@@ -96,7 +96,7 @@ This ensures:
 
 ## 📊 Pitch & Links
 
-- Pitch Deck: [Add link]
+- Pitch Deck: https://drive.google.com/file/d/18aSVjNUS7DMEF2GPzkEQs2h-XC23Be3Y/view?usp=sharing
 - Demo Video: https://youtu.be/t1AwxHd4zoo
 
 ---
