@@ -1,15 +1,15 @@
 {
   "hedera": {
     "network": "testnet",
-    "operatorId": "0.0.123456",
-    "operatorKey": "302e...",
-    "topicId": "0.0.654321"
+    "operatorId": "0.0.7162616",
+    "operatorKey": "your_hedera_private_key",
+    "topicId": "0.0.8322593"
   },
   "evm": {
-    "rpcUrl": "https://your-rpc-endpoint",
+    "rpcUrl": "https://testnet.hashio.io/api",
     "chainId": 296,
-    "validationRegistryAddress": "0x0000000000000000000000000000000000000000",
-    "agentRegistryAddress": "0x0000000000000000000000000000000000000000",
+    "validationRegistryAddress": "0x4D6f0ea66716eD3bA9cdB8da0CeE72343d7f7423",
+    "agentRegistryAddress": "0xA94E50b71b8211D4f281778560d3359a68798fd1",
     "startBlock": 0
   }
 }

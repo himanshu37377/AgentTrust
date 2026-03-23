@@ -1,130 +1,155 @@
-# HCS Relayer (ValidationRegistry)
+# AgentTrust Backend and HCS Relayer
 
-This relayer listens to `ValidationRegistry` and `AgentRegistry` events and publishes canonical JSON messages to Hedera Consensus Service (HCS).
+This workspace contains the backend services used by AgentTrust.
 
-## Events relayed
+It has two main roles:
 
-- `ExecutionSubmitted` -> `EXEC_SUBMITTED`
-- `VoteSubmitted` -> `VOTE_CAST`
-- `ExecutionFinalized` -> `EXEC_FINALIZED`
-- `ValidatorRegistered` -> `VALIDATOR_REGISTERED`
-- `AgentRegistered` -> `AGENT_REGISTERED`
-- `AgentRevoked` -> `AGENT_REVOKED`
+- public agent API for execution, verification, and metadata upload
+- optional HCS relayer for publishing protocol events to Hedera Consensus Service
 
-## Setup
+## What is inside
 
-1. Copy `src/config.example.json` to `src/config.json` and fill values.
-2. Install deps: `npm install`
-3. Run: `npm start`
+### 1. Agent API
 
-## Notes
+Start command:
 
-- Solidity remains the source of truth.
-- HCS is used as ordered audit/event stream.
-- Dedupe is by `txHash:logIndex` for runtime safety.
+```bash
+npm run agent:start
+```
 
-## Protocol Logs formatter
+This runs:
 
-Use `src/parseMirrorNodeMessage.js` and `src/formatProtocolLog.js` to convert Mirror Node topic messages into display-ready log entries for the Validators page.
+- `src/agent/server.js`
 
-Example flow:
-
-1. Read HCS message JSON from `/api/v1/topics/{topicId}/messages`
-2. Parse each raw message with `parseMirrorNodeMessage(rawMessage)`
-3. Pass `parsed.payload` and `parsed.consensusTimestamp` into `formatProtocolLog(...)`
-4. Render the returned `message`, `time`, and `severity`
-
-## Deterministic Agent
-
-This package also includes a minimal deterministic math agent for the AgentTrust demo.
-
-### Run the agent API
-
-1. Install deps: `npm install`
-2. Copy `.env.example` to `.env` and set `PINATA_JWT` plus `GEMINI_API_KEY`
-3. Start the API: `npm run agent:start`
-
-The server exposes:
+Exposed endpoints:
 
 - `POST /agent/execute`
 - `POST /api/verify`
 - `POST /metadata/upload`
-- `POST /upload-metadata` (compatibility alias)
+- `POST /upload-metadata`
 
-Request:
+What they do:
 
-```json
-{
-  "prompt": "sum of numbers from 1 to 10"
-}
+- `/agent/execute` runs the demo math agent
+- `/api/verify` recomputes deterministic outputs using Gemini
+- `/metadata/upload` pins generated metadata JSON to IPFS through Pinata
+
+### 2. HCS relayer
+
+Start command:
+
+```bash
+npm start
 ```
 
-Response:
+This runs:
 
-```json
-{
-  "input": "sum of numbers from 1 to 10",
-  "result": 55,
-  "normalizedOutput": "55",
-  "executionCommitment": "0xced475eba944da6b046d6e2e63dc0be29fd3a553d06e6ebe75b83d939c1f4b48",
-}
+- `src/index.js`
+
+The relayer listens to contract events and publishes structured JSON messages to HCS for audit visibility.
+
+## Environment
+
+Create:
+
+- `.env`
+
+from:
+
+- `.env.example`
+
+Important variables:
+
+- `PORT`
+- `PINATA_JWT`
+- `GEMINI_API_KEY`
+- `GEMINI_VERIFIER_MODEL`
+- `GEMINI_BASE_URL`
+- `HEDERA_NETWORK`
+- `HEDERA_OPERATOR_ID`
+- `HEDERA_OPERATOR_KEY`
+- `HEDERA_MIRROR_NODE_URL`
+- `HEDERA_TOPIC_ID`
+
+Notes:
+
+- `PINATA_JWT` is required for metadata upload
+- `GEMINI_API_KEY` is required for `/api/verify`
+- keep these values backend-only
+
+## Agent API local run
+
+```bash
+npm install
+cp .env.example .env
+npm run agent:start
 ```
 
-Verifier request:
+Default local URL:
 
-```json
-{
-  "input": "sum of numbers from 1 to 10",
-  "agentId": 1
-}
+- `http://localhost:3001`
+
+Example request:
+
+```bash
+curl -X POST "http://localhost:3001/agent/execute" \
+  -H "Content-Type: application/json" \
+  -d '{"prompt":"What is 1+9?","agentId":2}'
 ```
 
-Verifier response:
+Example verify request:
 
-```json
-{
-  "output": "55",
-  "expectedHash": "0xced475eba944da6b046d6e2e63dc0be29fd3a553d06e6ebe75b83d939c1f4b48",
-  "model": "Verifier: Gemini 2.5 Flash (Deterministic Mode)"
-}
+```bash
+curl -X POST "http://localhost:3001/api/verify" \
+  -H "Content-Type: application/json" \
+  -d '{"input":"What is 1+9?","agentId":2}'
 ```
 
-Metadata upload request:
+## HCS relayer setup
 
-```json
-{
-  "metadata": {
-    "name": "Example Agent"
-  }
-}
+To run the relayer, also create:
+
+- `src/config.json`
+
+from:
+
+- `src/config.example.json`
+
+Then run:
+
+```bash
+npm start
 ```
 
-Metadata upload response:
+The config includes:
 
-```json
-{
-  "cid": "bafy...",
-  "metadataURI": "ipfs://bafy..."
-}
-```
+- Hedera operator account
+- Hedera topic ID
+- Hedera JSON-RPC URL
+- deployed `ValidationRegistry` address
+- deployed `AgentRegistry` address
 
-### Supported prompts
+## Current testnet reference
 
-- Arithmetic expressions containing `+`, `-`, `*`, `/`, and parentheses
-- Natural language wrappers such as `What's 1+3+4*5?`
-- Inclusive ranges in the form `sum of numbers from X to Y`
+The current demo configuration uses:
 
-### Determinism notes
+- Hedera account ID: `0.0.7162616`
+- Topic ID: `0.0.8322593`
+- RPC URL: `https://testnet.hashio.io/api`
 
-- The JSON output always keeps `input` before `result`.
-- `input` is hashed exactly as received.
-- Arithmetic is evaluated with exact rational math instead of unsafe `eval`.
-- Division by zero returns the fixed result `UNDEFINED`.
-- Deterministic execution commitments use `keccak256(abi.encode(input, normalizedOutput, agentId))`.
-- `normalizedOutput` trims whitespace, collapses repeated whitespace, and lowercases before hashing.
-- `/api/verify` uses Gemini only.
-- The verifier uses `temperature: 0` and a strict plain-string response rule.
+Demo contract addresses are already reflected in `.env.example` and `src/config.example.json`.
 
-### Tests
+## Deployment
 
-Run `npm run agent:test`.
+For a stable public setup:
+
+- frontend on Vercel
+- backend on Render or Railway
+
+If you use `ngrok`, the frontend can still call this backend, but only while your local machine and tunnel are running.
+
+## Notes
+
+- Solidity contracts remain the protocol source of truth
+- HCS is used as an ordered audit stream
+- the demo math agent is intentionally simple so the trust and verification flow is easy to inspect

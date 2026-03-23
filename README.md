@@ -96,8 +96,10 @@ This ensures:
 
 ## 📊 Pitch & Links
 
+- Website: https://agentrust-main.vercel.app
 - Pitch Deck: https://drive.google.com/file/d/18aSVjNUS7DMEF2GPzkEQs2h-XC23Be3Y/view?usp=sharing
 - Demo Video: https://youtu.be/t1AwxHd4zoo
+- Repo: https://github.com/himanshu37377/AgentTrust
 
 ---
 
@@ -207,29 +209,56 @@ Trust is enforced.
 
 ## ⚙️ Setup
 
+### 1. Clone the repo
+
 ```bash
 git clone https://github.com/himanshu37377/AgentTrust.git
 cd AgentTrust
+```
 
+### 2. Install and build contracts
+
+```bash
 forge install
 forge build
-
-cd agentrust-main
-npm install
-npm run dev
-
-cd ../hcs-relayer
-npm install
-cp .env.example .env
-npm run agent:start
 ```
+
+### 3. Frontend and backend setup
+
+For detailed setup instructions, environment variables, and run commands, see:
+
+- [Frontend README](/Users/himanshu/Downloads/KYA/agentrust-main/README.md)
+- [Backend README](/Users/himanshu/Downloads/KYA/hcs-relayer/README.md)
 
 ---
 
-## 🌐 Environment
+## 🌐 Environment Overview
 
-- Frontend → localhost:8080
-- Backend → localhost:3001
-- Network → Hedera Testnet
+- Frontend UI: `agentrust-main`
+- Backend agent / verifier / metadata upload API: `hcs-relayer`
+- Network: Hedera Testnet
+
+---
+
+## 🛰️ Hedera Testnet Deployment Reference
+
+Current demo account:
+
+- Testnet account ID: `0.0.7162616`
+
+Current HCS topic:
+
+- `VITE_HEDERA_VALIDATION_TOPIC_ID=0.0.8322593`
+
+Current contract deployments:
+
+- `AgentRegistry`: `0xA94E50b71b8211D4f281778560d3359a68798fd1` (`0.0.83387560`)
+- `ReputationRegistry`: `0xf753820da4681a2B5C78E3a229b8B6aC0e7C5262` (`0.0.8338764`)
+- `ValidationRegistry`: `0x4D6f0ea66716eD3bA9cdB8da0CeE72343d7f7423` (`0.0.8338770`)
+- `AgentNFT`: `0xE9a2F8A8a838D6a8155a673FC160d4e83e10250F` (`0.0.8338758`)
+- `StakingManager`: `0xfA6349bCcCB99A8e56b34357670f7Ae0B6445568` (`0.0.8338767`)
+- `AuthorizationManager`: `0xC536DfdAbB01efC7b02F2a743D4160C4523f28f0` (`0.0.8338761`)
+
+These are the addresses currently used by the demo frontend.
 
 ---
