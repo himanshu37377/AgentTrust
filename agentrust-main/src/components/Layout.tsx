@@ -25,7 +25,7 @@ function shortenAddress(address: string) {
   return `${address.slice(0, 6)}..${address.slice(-4)}`;
 }
 
-function formatHbarBalance(balance: bigint) {
+function formatOgBalance(balance: bigint) {
   const formatted = Number(formatEther(balance));
   if (formatted >= 1000) {
     return formatted.toLocaleString(undefined, { maximumFractionDigits: 2 });
@@ -66,7 +66,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
     const walletBalance = await provider.getBalance(activeAccount);
     setAccount(activeAccount);
-    setBalance(formatHbarBalance(walletBalance));
+    setBalance(formatOgBalance(walletBalance));
   };
 
   useEffect(() => {
@@ -110,8 +110,8 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     setIsConnecting(true);
 
     try {
-      const chainId = import.meta.env.VITE_HEDERA_CHAIN_ID;
-      const rpcUrl = import.meta.env.VITE_HEDERA_RPC_URL;
+      const chainId = import.meta.env.VITE_ZEROG_CHAIN_ID;
+      const rpcUrl = import.meta.env.VITE_ZEROG_RPC_URL;
 
       if (chainId && rpcUrl) {
         try {
@@ -130,15 +130,17 @@ export default function Layout({ children }: { children: React.ReactNode }) {
               method: "wallet_addEthereumChain",
               params: [{
                 chainId,
-                chainName: import.meta.env.VITE_HEDERA_NETWORK_NAME || "Hedera Testnet",
+                chainName:
+                  import.meta.env.VITE_ZEROG_NETWORK_NAME || "0G Galileo Testnet",
                 nativeCurrency: {
-                  name: "HBAR",
-                  symbol: "HBAR",
+                  name: "OG",
+                  symbol: "OG",
                   decimals: 18,
                 },
                 rpcUrls: [rpcUrl],
-                blockExplorerUrls: import.meta.env.VITE_HEDERA_BLOCK_EXPLORER_URL
-                  ? [import.meta.env.VITE_HEDERA_BLOCK_EXPLORER_URL]
+                blockExplorerUrls:
+                  import.meta.env.VITE_ZEROG_BLOCK_EXPLORER_URL
+                    ? [import.meta.env.VITE_ZEROG_BLOCK_EXPLORER_URL]
                   : undefined,
               }],
             });
@@ -211,7 +213,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
               <div className="hidden sm:flex min-w-[156px] flex-col rounded-xl border border-white/10 bg-white/[0.04] px-4 py-2.5 leading-tight shadow-[0_10px_30px_rgba(7,12,24,0.25)]">
                 <span className="text-sm font-semibold text-cyan-300">{shortenAddress(account)}</span>
                 <span className="mt-1 text-xs font-semibold text-emerald-300">
-                  {balance || "0"} HBAR
+                  {balance || "0"} OG
                 </span>
               </div>
             )}
@@ -219,7 +221,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
               onClick={connectWallet}
               className="bg-gradient-to-r from-trust-accent-blue to-trust-accent-purple hover:brightness-110 text-white rounded-lg px-6 py-2.5 text-sm font-bold transition-all shadow-lg shadow-trust-accent-blue/20 active:scale-95"
             >
-              {isConnecting ? "Connecting..." : account ? "Wallet Connected" : "Connect Wallet"}
+              {isConnecting ? "Connecting..." : account ? "0G Wallet Connected" : "Connect 0G Wallet"}
             </button>
           </div>
         </div>
@@ -243,8 +245,8 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             <div className="border-b border-white/10 px-6 py-5">
               <div className="flex items-start justify-between gap-4">
                 <div>
-                  <h2 className="text-xl font-bold text-white tracking-tight">Wallet Connected</h2>
-                  <p className="mt-1 text-sm text-slate-400">Manage your connected Hedera wallet session.</p>
+                  <h2 className="text-xl font-bold text-white tracking-tight">0G Wallet Connected</h2>
+                  <p className="mt-1 text-sm text-slate-400">Manage your connected 0G wallet session.</p>
                 </div>
                 <button
                   onClick={() => setShowWalletModal(false)}
@@ -273,7 +275,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                     Copy
                   </button>
                 </div>
-                <p className="mt-3 text-sm font-semibold text-emerald-300">{balance || "0"} HBAR available</p>
+                <p className="mt-3 text-sm font-semibold text-emerald-300">{balance || "0"} OG available</p>
               </div>
 
               <div className="flex justify-end gap-3">

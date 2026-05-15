@@ -1,44 +1,58 @@
-import { BrowserProvider, Contract, Interface, JsonRpcProvider, formatEther } from "ethers";
+import { BrowserProvider, Contract, JsonRpcProvider, formatEther } from "ethers";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "@/components/ui/use-toast";
-import { createUaid } from "@hashgraphonline/standards-sdk/hcs14";
+import { fetchProtocolLogs } from "@/lib/zerog-runtime";
 
 const AGENT_REGISTRY_ABI = [
-  "function calculateStakeAmount(uint8 riskLevel) view returns (uint256)",
-  "function REVOKE_TRUST_THRESHOLD() view returns (uint256)",
-  "function getAgent(uint256 agentId) view returns (tuple(bool isRegistered,address owner,string metadataURI,uint256 trustScore,uint8 rating,uint8 riskLevel,bool isDeterministic,uint256 stakeAmount,bool revoked,uint256 createdAt))",
-  "function agentNFT() view returns (address)",
-  "function registerAgent(string metadataURI,(uint32 skillId,string name,string description,string expectedReasoning,string outputSchema,string domain) capabilityInput,uint8 riskLevel,bool isDeterministic) payable",
-  "function revokeAgent(uint256 agentId)",
+  "event AgentRegistered(address indexed agent,string indexed agentId,string metadataHash,uint8 riskLevel,bool isDeterministic)",
+  "event MetadataHashUpdated(address indexed agent,string previousHash,string newHash)",
+  "event TrustScoreUpdated(address indexed agent,uint256 previousScore,uint256 newScore)",
+  "event AgentRevoked(address indexed agent)",
+  "function registerAgentWithProfile(string agentId,string name,string description,string capabilities,string metadataHash,uint8 riskLevel,bool isDeterministic) payable",
+  "function getAgent(address agent) view returns (tuple(string agentId,string name,string description,string capabilities,string metadataHash,uint256 trustScore,uint8 riskLevel,bool isDeterministic,uint256 stakeAmount,bool exists,bool revoked))",
+] as const;
+
+const STAKING_MANAGER_ABI = [
+  "function quoteStake(uint8 riskLevel) view returns (uint256)",
 ] as const;
 
 type RiskLevel = "low" | "medium" | "high";
 type ExecutionMode = "deterministic" | "non-deterministic";
-type UaidProtocol = "rest" | "hcs-10" | "a2a";
-type UaidRecipeType = "A2A" | "HEDERA_DID" | "EVM";
-
-type UaidPayload = {
-  registry: "hol";
-  name: string;
-  version: string;
-  protocol: string;
-  nativeId?: string;
-  skills: number[];
-};
-
-type UaidRecipeInputs = {
-  uaidName: string;
-  uaidVersion: string;
-  uaidProtocol: UaidProtocol;
-  uaidNativeId: string;
-  uaidSkillsInput: string;
-  didWebValue: string;
-  evmChainId: string;
-  evmAddress: string;
-};
 
 type EthereumProvider = {
   request: (args: { method: string; params?: unknown[] | object }) => Promise<unknown>;
+};
+
+type AgentMetadataDocument = {
+  agentId: string;
+  wallet: string;
+  name: string;
+  description: string;
+  endpoint: string;
+  capabilities: string[];
+  verificationProfile: {
+    executionMode: ExecutionMode;
+    riskLevel: RiskLevel;
+    provenanceModel: "observed-confirmed-inferred";
+    orchestration: "OpenClaw-compatible";
+  };
+  economicProfile: {
+    stakeRequirement: string;
+    trustSource: string[];
+  };
+  storageProfile: {
+    metadataLayer: "0G Storage";
+    memoryLayer: "0G Storage";
+    trustAnchoring: "0G Chain";
+  };
+  createdAt: string;
+};
+
+type UploadMetadataResponse = {
+  cid: string;
+  metadataURI: string;
+  storageHash?: string;
+  uploadMode?: string;
 };
 
 type ProtocolLog = {
@@ -50,108 +64,31 @@ type ProtocolLog = {
   sortValue?: number;
 };
 
-type MirrorNodeLogResponse = {
-  logs?: Array<{
-    timestamp?: string;
-    transaction_hash?: string;
-    data: string;
-    topics: string[];
-  }>;
-};
-
-type UploadMetadataResponse = {
-  cid: string;
-  metadataURI: string;
-};
-
-type AgentMetadataDocument = {
-  type: string;
-  name: string;
-  description: string;
-  endpoint: string;
-  services: Array<{
-    name: string;
-    endpoint: string;
-    description: string;
-  }>;
-  capabilities: Array<{
-    id: number;
-    name: string;
-    riskLevel: RiskLevel;
-    deterministic: boolean;
-  }>;
-  agentTrust: {
-    uaid: string;
-    did: string;
-    owner: string;
-    capabilities: Array<{
-      id: number;
-      name: string;
-      riskLevel: RiskLevel;
-      deterministic: boolean;
-    }>;
-    execution: {
-      mode: ExecutionMode;
-      validationModel: "output-hash" | "consensus";
-    };
-  };
-  createdAt: string;
-  image?: string;
-};
-
-const DEFAULT_OUTPUT_SCHEMA = `{
-  "status": "success",
-  "data": {
-    "action": "string",
-    "params": "object"
-  }
-}`;
-
 const riskLevelMap: Record<RiskLevel, 0 | 1 | 2> = {
   low: 0,
   medium: 1,
   high: 2,
 };
 
-const domainOptions = [
-  "DeFi Strategy",
-  "NLP Analysis",
-  "Cross-chain Messaging",
-  "Autonomous Governance",
-  "Quantitative Reasoning",
-  "Mathematical Computation",
-  "Numerical Analysis",
+const riskOptions = [
+  { key: "low" as const, label: "Low Risk" },
+  { key: "medium" as const, label: "Medium Risk" },
+  { key: "high" as const, label: "High Risk" },
 ];
 
-const protocolLogInterface = new Interface([
-  "event AgentRegistered(uint256 indexed agentId,address indexed owner,uint8 riskLevel,bool isDeterministic,string metadataURI)",
-  "event AgentRevoked(uint256 indexed agentId)",
-  "event CapabilityChanged(uint256 indexed agentId,uint32 skillId,string capability,uint256 riskLevel)",
-  "event TrustScoreUpdated(uint256 indexed agentId,uint256 oldScore,uint256 newScore)",
-  "event AgentMinted(uint256 indexed tokenId,address indexed to,string metadataURI)",
-  "event NFTMinted(address indexed to,uint256 indexed tokenId,int64 newTotalSupply)",
-  "event NFTBurned(uint256 indexed tokenId,int64 newTotalSupply)",
-  "event NFTRevoked(uint256 indexed tokenId,address indexed owner)",
-  "event AgentAuthorized(address indexed user,uint256 indexed agentId,uint32 skillId)",
-  "event AgentAuthorizedBatch(address indexed user,uint256 indexed agentId,uint256 capabilityCount)",
-  "event AuthorizationRevoked(address indexed user,uint256 indexed agentId)",
-]);
+const execModeOptions = [
+  { key: "deterministic" as const, label: "Deterministic" },
+  { key: "non-deterministic" as const, label: "Reasoning" },
+];
 
 function getEthereumProvider() {
   return (window as Window & { ethereum?: EthereumProvider }).ethereum;
 }
 
-function formatHbarAmount(value: bigint) {
-  const amount = Number(formatEther(value));
-  return amount.toLocaleString(undefined, {
-    maximumFractionDigits: amount > 0 && amount < 1 ? 4 : 2,
-  });
-}
-
 function getRpcProvider() {
-  const rpcUrl = import.meta.env.VITE_HEDERA_RPC_URL?.trim();
+  const rpcUrl = import.meta.env.VITE_ZEROG_RPC_URL?.trim();
   if (!rpcUrl) {
-    throw new Error("Missing VITE_HEDERA_RPC_URL");
+    throw new Error("Missing VITE_ZEROG_RPC_URL");
   }
 
   return new JsonRpcProvider(rpcUrl);
@@ -166,13 +103,8 @@ function getAgentRegistryAddress() {
   return address;
 }
 
-function getAuthorizationManagerAddress() {
-  const address = import.meta.env.VITE_AUTHORIZATION_MANAGER_ADDRESS?.trim();
-  if (!address) {
-    return "";
-  }
-
-  return address;
+function getStakingManagerAddress() {
+  return import.meta.env.VITE_STAKING_MANAGER_ADDRESS?.trim() || "";
 }
 
 function getMetadataUploadUrl() {
@@ -181,342 +113,33 @@ function getMetadataUploadUrl() {
     return "/metadata/upload";
   }
 
-  try {
-    const url = new URL(configuredUrl);
-    const hostname = url.hostname.toLowerCase();
-
-    // IPFS gateways are for reading pinned content, not for this app's JSON upload API.
-    if (
-      hostname.endsWith(".mypinata.cloud") ||
-      hostname === "ipfs.io" ||
-      hostname === "gateway.pinata.cloud" ||
-      url.pathname.includes("/ipfs/")
-    ) {
-      return "/metadata/upload";
-    }
-
-    if (url.pathname === "/" || !url.pathname.trim()) {
-      url.pathname = "/metadata/upload";
-    }
-    return url.toString();
-  } catch {
-    if (configuredUrl.startsWith("/")) {
-      return configuredUrl;
-    }
-
-    return configuredUrl.replace(/\/+$/, "");
-  }
+  return configuredUrl;
 }
 
-function extractReadableError(error: unknown) {
-  const rawMessage = error instanceof Error ? error.message : String(error);
-  const revertMatch = rawMessage.match(/execution reverted:\s*"[^"]+"/i);
-
-  if (revertMatch) {
-    return revertMatch[0];
-  }
-
-  if (rawMessage.includes("execution reverted (no data present; likely require(false) occurred")) {
-    return "Registration preflight failed during gas estimation. This commonly happens on Hedera when the AgentNFT mint path uses HTS precompiles. Retry with the manual gas fallback, and verify the wallet is associated with the AgentNFT collection.";
-  }
-
-  return rawMessage;
-}
-
-function parseSkillsInput(skillsInput: string) {
-  return skillsInput
-    .split(",")
-    .map((skill) => Number(skill.trim()))
-    .filter((skill) => Number.isInteger(skill) && skill >= 0);
-}
-
-function generateUid(name: string) {
-  return name.toLowerCase().trim().replace(/\s+/g, "-");
-}
-
-function buildUaidPayload(recipeType: UaidRecipeType, inputs: UaidRecipeInputs): UaidPayload {
-  const version = inputs.uaidVersion.trim() || "1.0.0";
-  const skills = parseSkillsInput(inputs.uaidSkillsInput);
-
-  switch (recipeType) {
-    case "A2A":
-      return {
-        registry: "hol",
-        name: inputs.uaidName.trim(),
-        version,
-        protocol: inputs.uaidProtocol,
-        nativeId: inputs.uaidNativeId.trim() || undefined,
-        skills,
-      };
-    case "HEDERA_DID": {
-      const did = inputs.didWebValue.trim();
-      return {
-        registry: "hol",
-        name: did,
-        version,
-        protocol: "did:hedera",
-        nativeId: did,
-        skills: [],
-      };
-    }
-    case "EVM":
-      return {
-        registry: "hol",
-        name: inputs.uaidName.trim(),
-        version,
-        protocol: "eip155",
-        nativeId: `${inputs.evmChainId.trim()}:${inputs.evmAddress.trim()}`,
-        skills,
-      };
-    default:
-      return {
-        registry: "hol",
-        name: inputs.uaidName.trim(),
-        version,
-        protocol: inputs.uaidProtocol,
-        nativeId: inputs.uaidNativeId.trim() || undefined,
-        skills,
-      };
-  }
-}
-
-function getRecipeBadge(recipeType: UaidRecipeType) {
-  switch (recipeType) {
-    case "A2A":
-      return "Deterministic Identity";
-    case "HEDERA_DID":
-      return "Hedera DID";
-    case "EVM":
-      return "On-chain Identity";
-  }
-}
-
-function isValidDidWeb(value: string) {
-  return /^did:hedera:(mainnet|testnet):[A-Za-z0-9]{32,}_\d+\.\d+\.\d+$/.test(value.trim());
-}
-
-function isValidEvmAddress(value: string) {
-  return /^0x[a-fA-F0-9]{40}$/.test(value.trim());
-}
-
-function isValidSkillId(value: string) {
-  const trimmed = value.trim();
-  if (!trimmed) {
-    return false;
-  }
-
-  const parsed = Number(trimmed);
-  if (!Number.isInteger(parsed) || parsed < 0) {
-    return false;
-  }
-
-  return parsed <= 39 || parsed >= 100;
-}
-
-function getMirrorNodeBaseUrl() {
-  return import.meta.env.VITE_HEDERA_MIRROR_NODE_URL?.trim() || "https://testnet.mirrornode.hedera.com";
-}
-
-function formatMirrorTimestamp(timestamp?: string) {
-  if (!timestamp) {
-    return new Date().toLocaleTimeString("en-US", { hour12: false });
-  }
-
-  const [seconds] = timestamp.split(".");
-  return new Date(Number(seconds) * 1000).toLocaleTimeString("en-US", {
-    hour12: false,
+function formatAmount(value: bigint) {
+  const amount = Number(formatEther(value));
+  if (!Number.isFinite(amount)) return "0";
+  return amount.toLocaleString(undefined, {
+    maximumFractionDigits: amount > 0 && amount < 1 ? 4 : 2,
   });
 }
 
-function parseMirrorTimestampValue(timestamp?: string) {
-  if (!timestamp) {
-    return 0;
-  }
-
-  const [seconds, nanos = "0"] = timestamp.split(".");
-  return Number(seconds) * 1_000 + Number(nanos.slice(0, 3).padEnd(3, "0"));
+function buildAgentId(name: string, wallet: string) {
+  const slug = name.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  return `${slug || "agent"}-${wallet.slice(2, 8).toLowerCase()}`;
 }
 
-function getRegisterAgentFallbackGasLimit(riskLevel: RiskLevel) {
-  switch (riskLevel) {
-    case "low":
-      return 1_800_000n;
-    case "medium":
-      return 2_200_000n;
-    case "high":
-      return 2_600_000n;
-  }
+function parseCapabilities(value: string) {
+  return value
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
 }
 
-async function fetchMirrorProtocolLogs(): Promise<ProtocolLog[]> {
-  const provider = getRpcProvider();
-  const registryContract = new Contract(getAgentRegistryAddress(), AGENT_REGISTRY_ABI, provider);
-  const mirrorBaseUrl = getMirrorNodeBaseUrl();
-  const authorizationManagerAddress = getAuthorizationManagerAddress();
-  const agentNftAddress = await registryContract.agentNFT().catch(() => "");
-
-  const contractAddresses = [
-    getAgentRegistryAddress(),
-    authorizationManagerAddress,
-    typeof agentNftAddress === "string" ? agentNftAddress.trim() : "",
-  ].filter((address): address is string => Boolean(address));
-
-  const payloads = await Promise.all(
-    contractAddresses.map(async (address) => {
-      try {
-        const response = await fetch(
-          `${mirrorBaseUrl}/api/v1/contracts/${address}/results/logs?order=desc&limit=20`,
-        );
-
-        if (!response.ok) {
-          throw new Error(`Mirror Node request failed with ${response.status}`);
-        }
-
-        return (await response.json()) as MirrorNodeLogResponse;
-      } catch (error) {
-        console.warn(`Unable to fetch protocol logs for contract ${address}`, error);
-        return { logs: [] } satisfies MirrorNodeLogResponse;
-      }
-    }),
-  );
-
-  const entries = payloads.flatMap((payload) => payload.logs ?? []);
-
-  return entries
-    .map((log, index) => {
-      try {
-        const parsed = protocolLogInterface.parseLog({
-          topics: log.topics,
-          data: log.data,
-        });
-
-        if (!parsed) {
-          return null;
-        }
-
-        const time = formatMirrorTimestamp(log.timestamp);
-        const txHash = log.transaction_hash?.slice(0, 10) ?? "tx";
-        const sortValue = parseMirrorTimestampValue(log.timestamp);
-
-        switch (parsed.name) {
-          case "AgentRegistered":
-            return {
-              id: `${txHash}-${index}`,
-              time,
-              label: "AgentRegistered",
-              description: `Agent #${parsed.args.agentId.toString()} registered on Hedera`,
-              colorClass: "text-emerald-400",
-              sortValue,
-            } satisfies ProtocolLog;
-          case "CapabilityChanged":
-            return {
-              id: `${txHash}-${index}`,
-              time,
-              label: "CapabilityChanged",
-              description: `${parsed.args.capability || `Skill ${parsed.args.skillId.toString()}`} updated for Agent #${parsed.args.agentId.toString()}`,
-              colorClass: "text-blue-400",
-              sortValue,
-            } satisfies ProtocolLog;
-          case "AgentRevoked":
-            return {
-              id: `${txHash}-${index}`,
-              time,
-              label: "AgentRevoked",
-              description: `Agent #${parsed.args.agentId.toString()} revoked`,
-              colorClass: "text-red-400",
-              sortValue,
-            } satisfies ProtocolLog;
-          case "TrustScoreUpdated":
-            return {
-              id: `${txHash}-${index}`,
-              time,
-              label: "TrustScoreUpdated",
-              description: `Agent #${parsed.args.agentId.toString()} trust changed to ${parsed.args.newScore.toString()}`,
-              colorClass: "text-amber-300",
-              sortValue,
-            } satisfies ProtocolLog;
-          case "AgentMinted":
-            return {
-              id: `${txHash}-${index}`,
-              time,
-              label: "AgentMinted",
-              description: `Agent NFT #${parsed.args.tokenId.toString()} minted with metadata URI recorded`,
-              colorClass: "text-cyan-300",
-              sortValue,
-            } satisfies ProtocolLog;
-          case "NFTMinted":
-            return {
-              id: `${txHash}-${index}`,
-              time,
-              label: "NFTMinted",
-              description: `NFT #${parsed.args.tokenId.toString()} minted. Total supply is now ${parsed.args.newTotalSupply.toString()}`,
-              colorClass: "text-cyan-400",
-              sortValue,
-            } satisfies ProtocolLog;
-          case "NFTBurned":
-            return {
-              id: `${txHash}-${index}`,
-              time,
-              label: "NFTBurned",
-              description: `NFT #${parsed.args.tokenId.toString()} burned. Total supply is now ${parsed.args.newTotalSupply.toString()}`,
-              colorClass: "text-rose-300",
-              sortValue,
-            } satisfies ProtocolLog;
-          case "NFTRevoked":
-            return {
-              id: `${txHash}-${index}`,
-              time,
-              label: "NFTRevoked",
-              description: `NFT #${parsed.args.tokenId.toString()} revoked from ${parsed.args.owner}`,
-              colorClass: "text-rose-400",
-              sortValue,
-            } satisfies ProtocolLog;
-          case "AgentAuthorized":
-            return {
-              id: `${txHash}-${index}`,
-              time,
-              label: "AgentAuthorized",
-              description: `Authorization granted for Agent #${parsed.args.agentId.toString()} skill ${parsed.args.skillId.toString()}`,
-              colorClass: "text-violet-300",
-              sortValue,
-            } satisfies ProtocolLog;
-          case "AgentAuthorizedBatch":
-            return {
-              id: `${txHash}-${index}`,
-              time,
-              label: "AgentAuthorizedBatch",
-              description: `${parsed.args.capabilityCount.toString()} capabilities authorized for Agent #${parsed.args.agentId.toString()}`,
-              colorClass: "text-violet-400",
-              sortValue,
-            } satisfies ProtocolLog;
-          case "AuthorizationRevoked":
-            return {
-              id: `${txHash}-${index}`,
-              time,
-              label: "AuthorizationRevoked",
-              description: `Authorization revoked for Agent #${parsed.args.agentId.toString()}`,
-              colorClass: "text-orange-300",
-              sortValue,
-            } satisfies ProtocolLog;
-          default:
-            return null;
-        }
-      } catch {
-        return null;
-      }
-    })
-    .filter((entry): entry is ProtocolLog => Boolean(entry))
-    .sort((a, b) => (b.sortValue ?? 0) - (a.sortValue ?? 0))
-    .slice(0, 20);
-}
-
-async function switchToHederaNetwork(ethereum: EthereumProvider) {
-  const chainId = import.meta.env.VITE_HEDERA_CHAIN_ID;
-  const rpcUrl = import.meta.env.VITE_HEDERA_RPC_URL;
-
-  if (!chainId || !rpcUrl) {
-    return;
-  }
+async function switchToZeroGNetwork(ethereum: EthereumProvider) {
+  const chainId = import.meta.env.VITE_ZEROG_CHAIN_ID;
+  const rpcUrl = import.meta.env.VITE_ZEROG_RPC_URL;
+  if (!chainId || !rpcUrl) return;
 
   try {
     await ethereum.request({
@@ -537,116 +160,75 @@ async function switchToHederaNetwork(ethereum: EthereumProvider) {
       method: "wallet_addEthereumChain",
       params: [{
         chainId,
-        chainName: import.meta.env.VITE_HEDERA_NETWORK_NAME || "Hedera Testnet",
+        chainName: import.meta.env.VITE_ZEROG_NETWORK_NAME || "0G Galileo Testnet",
         nativeCurrency: {
-          name: "HBAR",
-          symbol: "HBAR",
+          name: "OG",
+          symbol: "OG",
           decimals: 18,
         },
         rpcUrls: [rpcUrl],
-        blockExplorerUrls: import.meta.env.VITE_HEDERA_BLOCK_EXPLORER_URL
-          ? [import.meta.env.VITE_HEDERA_BLOCK_EXPLORER_URL]
+        blockExplorerUrls: import.meta.env.VITE_ZEROG_BLOCK_EXPLORER_URL
+          ? [import.meta.env.VITE_ZEROG_BLOCK_EXPLORER_URL]
           : undefined,
       }],
     });
   }
 }
 
+function getReadableError(error: unknown) {
+  return error instanceof Error ? error.message : String(error);
+}
+
 export default function RegisterAgentPage() {
-  const [riskLevel, setRiskLevel] = useState<RiskLevel>("low");
-  const [execMode, setExecMode] = useState<ExecutionMode>("deterministic");
   const [agentName, setAgentName] = useState("");
   const [agentDescription, setAgentDescription] = useState("");
   const [endpoint, setEndpoint] = useState("");
-  const [capabilitySkillId, setCapabilitySkillId] = useState("");
   const [capabilityName, setCapabilityName] = useState("");
-  const [domain, setDomain] = useState(domainOptions[0]);
-  const [expectedReasoning, setExpectedReasoning] = useState("");
-  const [outputSchema, setOutputSchema] = useState(DEFAULT_OUTPUT_SCHEMA);
+  const [capabilityTags, setCapabilityTags] = useState("analysis, verification");
+  const [riskLevel, setRiskLevel] = useState<RiskLevel>("low");
+  const [execMode, setExecMode] = useState<ExecutionMode>("deterministic");
+  const [requiredStake, setRequiredStake] = useState<bigint>(0n);
   const [stakeOptions, setStakeOptions] = useState<Record<RiskLevel, bigint>>({
     low: 0n,
     medium: 0n,
     high: 0n,
   });
-  const [requiredStake, setRequiredStake] = useState<bigint>(0n);
   const [isLoadingStake, setIsLoadingStake] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [protocolLogs, setProtocolLogs] = useState<ProtocolLog[]>([]);
-  const [uaidRecipe, setUaidRecipe] = useState<UaidRecipeType>("A2A");
-  const [uaidName, setUaidName] = useState("");
-  const [uaidVersion, setUaidVersion] = useState("1.0.0");
-  const [uaidProtocol, setUaidProtocol] = useState<UaidProtocol>("rest");
-  const [uaidNativeId, setUaidNativeId] = useState("");
-  const [uaidSkillsInput, setUaidSkillsInput] = useState("");
-  const [didWebValue, setDidWebValue] = useState("");
-  const [evmChainId, setEvmChainId] = useState("296");
-  const [evmAddress, setEvmAddress] = useState("");
-  const [generatedUaid, setGeneratedUaid] = useState("");
-  const [generatedRecipe, setGeneratedRecipe] = useState<UaidRecipeType | null>(null);
-  const [isGeneratingUaid, setIsGeneratingUaid] = useState(false);
   const [generatedMetadata, setGeneratedMetadata] = useState<AgentMetadataDocument | null>(null);
-  const [generatedMetadataUri, setGeneratedMetadataUri] = useState("");
+  const [generatedMetadataHash, setGeneratedMetadataHash] = useState("");
   const [generatedCid, setGeneratedCid] = useState("");
   const [isGeneratingMetadata, setIsGeneratingMetadata] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [isMetadataModalOpen, setIsMetadataModalOpen] = useState(false);
-  const [feedbackModal, setFeedbackModal] = useState<{
-    title: string;
-    message: string;
-    tone: "warning" | "success" | "error";
-  } | null>(null);
-
-  const riskOptions = useMemo(
-    () => [
-      { key: "low" as const, label: "Low" },
-      { key: "medium" as const, label: "Medium" },
-      { key: "high" as const, label: "High" },
-    ],
-    [],
-  );
-
-  const metadataDependencies = [
-    agentName,
-    agentDescription,
-    endpoint,
-    capabilitySkillId,
-    capabilityName,
-    domain,
-    expectedReasoning,
-    outputSchema,
-    riskLevel,
-    execMode,
-    didWebValue,
-    generatedUaid,
-  ].join("|");
+  const [protocolLogs, setProtocolLogs] = useState<ProtocolLog[]>([]);
 
   useEffect(() => {
     let cancelled = false;
 
-    async function loadStakeRequirement() {
+    async function loadStakeRequirements() {
+      setIsLoadingStake(true);
       try {
-        setIsLoadingStake(true);
         const provider = getRpcProvider();
-        const contract = new Contract(getAgentRegistryAddress(), AGENT_REGISTRY_ABI, provider);
-        const [lowStake, mediumStake, highStake] = await Promise.all([
-          contract.calculateStakeAmount(riskLevelMap.low),
-          contract.calculateStakeAmount(riskLevelMap.medium),
-          contract.calculateStakeAmount(riskLevelMap.high),
-        ]);
+        const stakingAddress = getStakingManagerAddress();
+        const staking = stakingAddress
+          ? new Contract(stakingAddress, STAKING_MANAGER_ABI, provider)
+          : null;
 
-        const nextStakeOptions = {
-          low: BigInt(lowStake),
-          medium: BigInt(mediumStake),
-          high: BigInt(highStake),
-        };
+        const nextStakeOptions = staking
+          ? {
+              low: BigInt(await staking.quoteStake(riskLevelMap.low)),
+              medium: BigInt(await staking.quoteStake(riskLevelMap.medium)),
+              high: BigInt(await staking.quoteStake(riskLevelMap.high)),
+            }
+          : { low: 0n, medium: 0n, high: 0n };
 
         if (!cancelled) {
           setStakeOptions(nextStakeOptions);
           setRequiredStake(nextStakeOptions[riskLevel]);
         }
-      } catch (error) {
-        console.warn("Unable to fetch stake requirement", error);
+      } catch {
         if (!cancelled) {
-          setStakeOptions({ low: 0n, medium: 100n, high: 500n });
+          setStakeOptions({ low: 0n, medium: 0n, high: 0n });
           setRequiredStake(0n);
         }
       } finally {
@@ -656,230 +238,97 @@ export default function RegisterAgentPage() {
       }
     }
 
-    void loadStakeRequirement();
-
+    void loadStakeRequirements();
     return () => {
       cancelled = true;
     };
   }, [riskLevel]);
 
   useEffect(() => {
-    if (!feedbackModal) {
-      return;
-    }
-
-    const timeout = window.setTimeout(() => {
-      setFeedbackModal(null);
-    }, 1600);
-
-    return () => {
-      window.clearTimeout(timeout);
-    };
-  }, [feedbackModal]);
-
-  useEffect(() => {
     let cancelled = false;
 
     async function loadProtocolLogs() {
       try {
-        const logs = await fetchMirrorProtocolLogs();
+        const logs = await fetchProtocolLogs(20);
+        const mapped = logs.map((log, index) => ({
+          id: `${log.eventType || "protocol"}-${log.time}-${index}`,
+          time: log.time,
+          label: log.eventType || "ProtocolEvent",
+          description: log.text,
+          colorClass: log.color,
+          sortValue: 20 - index,
+        }));
+
         if (!cancelled) {
-          setProtocolLogs(logs);
+          setProtocolLogs(mapped);
         }
-      } catch (error) {
-        console.warn("Unable to fetch protocol logs", error);
+      } catch {
+        if (!cancelled) {
+          setProtocolLogs([]);
+        }
       }
     }
 
     void loadProtocolLogs();
-    const interval = window.setInterval(() => {
+    const intervalId = window.setInterval(() => {
       void loadProtocolLogs();
     }, 12000);
 
     return () => {
       cancelled = true;
-      window.clearInterval(interval);
+      window.clearInterval(intervalId);
     };
   }, []);
 
-  useEffect(() => {
-    setGeneratedMetadata(null);
-    setGeneratedMetadataUri("");
-    setGeneratedCid("");
-    setIsMetadataModalOpen(false);
-  }, [metadataDependencies]);
+  const metadataReady = generatedMetadataHash.trim().length > 0;
+  const registrationReady =
+    agentName.trim().length > 0 &&
+    agentDescription.trim().length > 0 &&
+    parseCapabilities(capabilityTags).length > 0 &&
+    capabilityName.trim().length > 0 &&
+    metadataReady;
 
-  const requiredStakeLabel = isLoadingStake ? "Loading..." : `${formatHbarAmount(requiredStake)} HBAR`;
+  const requiredStakeLabel = isLoadingStake ? "Loading..." : `${formatAmount(requiredStake)} OG`;
 
-  const prependProtocolLog = (
-    label: string,
-    description: string,
-    colorClass: ProtocolLog["colorClass"],
-  ) => {
-    setProtocolLogs((current) => [
-      {
-        id: `${Date.now()}-${label}`,
-        time: new Date().toLocaleTimeString("en-US", { hour12: false }),
-        label,
-        description,
-        colorClass,
-      },
-      ...current,
-    ].slice(0, 20));
-  };
-
-  const canGenerateMetadata =
-    agentName.trim().length > 0
-    && agentDescription.trim().length > 0
-    && endpoint.trim().length > 0
-    && isValidDidWeb(didWebValue)
-    && generatedUaid.trim().length > 0
-    && isValidSkillId(capabilitySkillId);
-
-  const canRegister =
-    isValidDidWeb(didWebValue)
-    && generatedUaid.trim().length > 0
-    && generatedMetadataUri.trim().length > 0;
-
-  const generateUaid = async () => {
-    if (uaidRecipe === "HEDERA_DID") {
-      if (!isValidDidWeb(didWebValue)) {
-        toast({
-          title: "Invalid Hedera DID",
-          description: "Enter a valid DID such as did:hedera:testnet:DZv8..._0.0.2666979 before generating.",
-          variant: "destructive",
-        });
-        return;
-      }
-    } else if (!uaidName.trim()) {
-      toast({
-        title: "Agent name required",
-        description: "Enter a UAID name before generating.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    if (uaidRecipe === "EVM") {
-      if (!evmChainId.trim() || Number.isNaN(Number(evmChainId)) || Number(evmChainId) <= 0) {
-        toast({
-          title: "Invalid chain ID",
-          description: "Enter a valid positive EVM chain ID.",
-          variant: "destructive",
-        });
-        return;
-      }
-
-      if (!isValidEvmAddress(evmAddress)) {
-        toast({
-          title: "Invalid EVM address",
-          description: "Address must be a 0x-prefixed 40-byte hex value.",
-          variant: "destructive",
-        });
-        return;
-      }
-    }
-
-    setIsGeneratingUaid(true);
-
-    try {
-      const payloadInputs: UaidRecipeInputs = {
-        uaidName,
-        uaidVersion,
-        uaidProtocol,
-        uaidNativeId,
-        uaidSkillsInput,
-        didWebValue,
-        evmChainId,
-        evmAddress,
-      };
-      const payload = buildUaidPayload(uaidRecipe, payloadInputs);
-      const uaid = await createUaid(payload, {
-        uid: generateUid(payload.name),
-      });
-
-      setGeneratedUaid(uaid);
-      setGeneratedRecipe(uaidRecipe);
-      prependProtocolLog("UAID Generated", `Generated ${uaidRecipe} identity payload`, "text-trust-blue");
-      toast({
-        title: "UAID generated",
-        description: "Generated successfully for metadata inclusion and registration.",
-      });
-    } catch (error) {
-      toast({
-        title: "UAID generation failed",
-        description: extractReadableError(error),
-        variant: "destructive",
-      });
-    } finally {
-      setIsGeneratingUaid(false);
-    }
-  };
-
-  const copyUaid = async () => {
-    if (!generatedUaid) {
-      return;
-    }
-
-    try {
-      await navigator.clipboard.writeText(generatedUaid);
-      toast({
-        title: "Copied",
-        description: "UAID copied to clipboard",
-      });
-    } catch {
-      toast({
-        title: "Copy failed",
-        description: "Unable to access clipboard in this environment.",
-        variant: "destructive",
-      });
-    }
-  };
-
-  const buildMetadata = (owner: string): AgentMetadataDocument => {
-    const capabilityId = Number(capabilitySkillId.trim());
-    const capabilityLabel = capabilityName.trim() || `Skill ${capabilityId}`;
-    const deterministic = execMode === "deterministic";
-    const capability = {
-      id: capabilityId,
-      name: capabilityLabel,
-      riskLevel,
-      deterministic,
-    };
-
+  const buildMetadata = (wallet: string): AgentMetadataDocument => {
+    const derivedAgentId = buildAgentId(agentName, wallet);
     return {
-      type: "https://eips.ethereum.org/EIPS/eip-8004#registration-v1",
+      agentId: derivedAgentId,
+      wallet,
       name: agentName.trim(),
       description: agentDescription.trim(),
       endpoint: endpoint.trim(),
-      services: [
-        {
-          name: "execution",
-          endpoint: endpoint.trim(),
-          description: "Primary execution interface",
-        },
-      ],
-      capabilities: [capability],
-      agentTrust: {
-        uaid: generatedUaid.trim(),
-        did: didWebValue.trim(),
-        owner,
-        capabilities: [capability],
-        execution: {
-          mode: execMode,
-          validationModel: deterministic ? "output-hash" : "consensus",
-        },
+      capabilities: Array.from(new Set([capabilityName.trim(), ...parseCapabilities(capabilityTags)])),
+      verificationProfile: {
+        executionMode: execMode,
+        riskLevel,
+        provenanceModel: "observed-confirmed-inferred",
+        orchestration: "OpenClaw-compatible",
+      },
+      economicProfile: {
+        stakeRequirement: requiredStakeLabel,
+        trustSource: [
+          "behavioral reliability",
+          "deterministic correctness",
+          "validator accountability",
+          "provenance memory",
+        ],
+      },
+      storageProfile: {
+        metadataLayer: "0G Storage",
+        memoryLayer: "0G Storage",
+        trustAnchoring: "0G Chain",
       },
       createdAt: new Date().toISOString(),
     };
   };
 
   const generateMetadata = async () => {
-    if (!canGenerateMetadata) {
-      setFeedbackModal({
-        title: "Incomplete Metadata Inputs",
-        message: "Provide DID, UAID, agent profile, endpoint, and a valid skill ID before generating metadata.",
-        tone: "warning",
+    if (!agentName.trim() || !agentDescription.trim() || !capabilityName.trim()) {
+      toast({
+        title: "Incomplete profile",
+        description: "Add name, description, and at least one primary capability before generating metadata.",
+        variant: "destructive",
       });
       return;
     }
@@ -888,67 +337,48 @@ export default function RegisterAgentPage() {
     if (!ethereum) {
       toast({
         title: "MetaMask required",
-        description: "Install MetaMask to generate ownership-aware metadata.",
+        description: "Install MetaMask to generate a wallet-bound 0G agent profile.",
       });
       return;
     }
 
     setIsGeneratingMetadata(true);
-
     try {
-      await switchToHederaNetwork(ethereum);
+      await switchToZeroGNetwork(ethereum);
       await ethereum.request({ method: "eth_requestAccounts" });
 
       const provider = new BrowserProvider(ethereum as never);
       const signer = await provider.getSigner();
-      const owner = await signer.getAddress();
-
-      prependProtocolLog("Metadata Built", "Constructing ERC-8004 registration metadata", "text-cyan-400");
-      const metadata = buildMetadata(owner);
+      const wallet = await signer.getAddress();
+      const metadata = buildMetadata(wallet);
       setGeneratedMetadata(metadata);
 
-      prependProtocolLog("Uploaded to IPFS", `Submitting metadata payload to ${getMetadataUploadUrl()}`, "text-blue-400");
       const response = await fetch(getMetadataUploadUrl(), {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "content-type": "application/json" },
         body: JSON.stringify({ metadata }),
       });
 
+      const payload = await response.json() as UploadMetadataResponse & { error?: string; details?: string };
       if (!response.ok) {
-        let errorMessage = `Metadata upload failed with ${response.status}`;
-        try {
-          const errorPayload = await response.json() as { error?: string; details?: string };
-          if (errorPayload.error?.trim()) {
-            errorMessage = errorPayload.error.trim();
-          }
-          if (errorPayload.details?.trim()) {
-            errorMessage = `${errorMessage}: ${errorPayload.details.trim()}`;
-          }
-        } catch {
-          // Ignore response parse issues and fall back to the status-based message.
-        }
-        throw new Error(errorMessage);
+        throw new Error(payload.details || payload.error || `Metadata upload failed with ${response.status}`);
       }
 
-      const payload = (await response.json()) as UploadMetadataResponse;
-      if (!payload.metadataURI?.trim()) {
-        throw new Error("Metadata upload did not return a valid metadataURI.");
+      const rootHash = payload.storageHash || payload.metadataURI || payload.cid;
+      if (!rootHash) {
+        throw new Error("0G metadata upload did not return a storage root.");
       }
 
-      setGeneratedCid(payload.cid);
-      setGeneratedMetadataUri(payload.metadataURI);
-      prependProtocolLog("CID Generated", payload.metadataURI, "text-emerald-400");
-
+      setGeneratedMetadataHash(rootHash);
+      setGeneratedCid(payload.cid || rootHash);
       toast({
-        title: "Metadata uploaded to IPFS successfully",
-        description: payload.metadataURI,
+        title: "Metadata stored on 0G",
+        description: `0G storage root: ${rootHash.slice(0, 18)}...`,
       });
     } catch (error) {
       toast({
         title: "Metadata generation failed",
-        description: extractReadableError(error),
+        description: getReadableError(error),
         variant: "destructive",
       });
     } finally {
@@ -957,11 +387,11 @@ export default function RegisterAgentPage() {
   };
 
   const registerAgent = async () => {
-    if (!canRegister) {
-      setFeedbackModal({
-        title: "Registration Locked",
-        message: "DID, UAID, and generated metadata are required before the contract call can proceed.",
-        tone: "warning",
+    if (!registrationReady || !generatedMetadata) {
+      toast({
+        title: "Registration locked",
+        description: "Generate the 0G metadata root before registering this wallet as an agent.",
+        variant: "destructive",
       });
       return;
     }
@@ -970,113 +400,39 @@ export default function RegisterAgentPage() {
     if (!ethereum) {
       toast({
         title: "MetaMask required",
-        description: "Install MetaMask to sign the AgentRegistry transaction.",
+        description: "Install MetaMask to sign the 0G agent registration transaction.",
       });
       return;
     }
 
     setIsSubmitting(true);
-
     try {
-      const trimmedMetadataUri = generatedMetadataUri.trim();
-      const parsedSkillId = Number(capabilitySkillId.trim());
-
-      if (!trimmedMetadataUri) {
-        throw new Error("Missing metadata URI. Generate metadata again before registering.");
-      }
-
-      if (trimmedMetadataUri.length > 100) {
-        throw new Error("Metadata URI is too long for the current AgentNFT mint flow. Use a shorter ipfs:// CID URI.");
-      }
-
-      if (!Number.isInteger(parsedSkillId) || parsedSkillId < 0) {
-        throw new Error("Skill ID must be a non-negative integer.");
-      }
-
-      if (parsedSkillId > 39 && parsedSkillId < 100) {
-        throw new Error("Skill IDs 40-99 are reserved by the contract. Use 0-39 or 100+.");
-      }
-
-      prependProtocolLog("Wallet Signature Requested", "RegisterAgent() awaiting signature", "text-blue-400");
-      await switchToHederaNetwork(ethereum);
+      await switchToZeroGNetwork(ethereum);
       await ethereum.request({ method: "eth_requestAccounts" });
 
       const provider = new BrowserProvider(ethereum as never);
       const signer = await provider.getSigner();
-      const contract = new Contract(getAgentRegistryAddress(), AGENT_REGISTRY_ABI, signer);
-
-      const latestStake = await contract.calculateStakeAmount(riskLevelMap[riskLevel]);
-      const capabilityInput = {
-        skillId: parsedSkillId,
-        name: capabilityName.trim() || `Skill ${capabilitySkillId.trim()}`,
-        description: agentDescription.trim(),
-        expectedReasoning: expectedReasoning.trim(),
-        outputSchema: outputSchema.trim(),
-        domain,
-      };
-      const riskLevelValue = riskLevelMap[riskLevel];
-      const isDeterministic = execMode === "deterministic";
-
-      let gasLimit: bigint;
-
-      try {
-        const estimatedGas = await contract.registerAgent.estimateGas(
-          trimmedMetadataUri,
-          capabilityInput,
-          riskLevelValue,
-          isDeterministic,
-          { value: latestStake },
-        );
-        gasLimit = (estimatedGas * 120n) / 100n;
-        prependProtocolLog("Gas Estimated", `${estimatedGas.toString()} units`, "text-cyan-300");
-      } catch {
-        gasLimit = getRegisterAgentFallbackGasLimit(riskLevel);
-        prependProtocolLog(
-          "Gas Estimation Fallback",
-          `Using manual gas limit ${gasLimit.toString()} because estimateGas reverted`,
-          "text-amber-300",
-        );
-      }
-
-      const registerCallData = contract.interface.encodeFunctionData("registerAgent", [
-        trimmedMetadataUri,
-        capabilityInput,
-        riskLevelValue,
-        isDeterministic,
-      ]);
-
-      prependProtocolLog(
-        "Calldata Encoded",
-        `registerAgent payload size ${Math.max((registerCallData.length - 2) / 2, 0)} bytes`,
-        "text-cyan-300",
+      const registry = new Contract(getAgentRegistryAddress(), AGENT_REGISTRY_ABI, signer);
+      const tx = await registry.registerAgentWithProfile(
+        generatedMetadata.agentId,
+        generatedMetadata.name,
+        generatedMetadata.description,
+        generatedMetadata.capabilities.join(", "),
+        generatedMetadataHash,
+        riskLevelMap[riskLevel],
+        execMode === "deterministic",
+        { value: requiredStake },
       );
 
-      const tx = await signer.sendTransaction({
-        to: getAgentRegistryAddress(),
-        data: registerCallData,
-        value: latestStake,
-        gasLimit,
-      });
-
-      prependProtocolLog("Transaction Broadcast", "RegisterAgent() sent to Hedera Testnet", "text-blue-400");
-
-      toast({
-        title: "Transaction submitted",
-        description: `MetaMask submitted the registration transaction: ${tx.hash.slice(0, 10)}...`,
-      });
-
       await tx.wait();
-      const logs = await fetchMirrorProtocolLogs();
-      setProtocolLogs(logs);
-
       toast({
         title: "Agent registered",
-        description: "The agent registration transaction was confirmed on Hedera.",
+        description: `Wallet-bound 0G agent profile confirmed. Tx: ${tx.hash.slice(0, 10)}...`,
       });
     } catch (error) {
       toast({
         title: "Registration failed",
-        description: extractReadableError(error),
+        description: getReadableError(error),
         variant: "destructive",
       });
     } finally {
@@ -1088,56 +444,12 @@ export default function RegisterAgentPage() {
     <div className="max-w-[1280px] mx-auto px-6 bg-gradient-animate">
       <header className="pt-16 pb-12">
         <h1 className="text-[48px] font-bold tracking-tight leading-tight text-white">
-          Register Your <span className="bg-clip-text text-transparent bg-gradient-to-r from-trust-blue to-trust-purple">AI Agent</span>
+          Register a <span className="bg-clip-text text-transparent bg-gradient-to-r from-trust-blue to-trust-purple">0G Agent Profile</span>
         </h1>
         <p className="max-w-3xl text-lg leading-relaxed mt-4 text-[#c2c5d0]">
-          Identity, configuration, and metadata now flow together. Generate standards-aligned metadata off-chain, store it on IPFS, and register the resulting URI on Hedera.
+          AgentTrust now uses lightweight wallet-based identity. Build an agent profile, store all metadata in 0G Storage, and anchor the resulting root on 0G Chain.
         </p>
       </header>
-
-      {feedbackModal && (
-        <div className="fixed inset-0 z-50 flex items-start justify-end p-4 pt-24">
-          <div
-            className="w-full max-w-[420px] overflow-hidden rounded-[20px] border border-amber-400/15 animate-in fade-in zoom-in-95 duration-200"
-            style={{
-              background:
-                feedbackModal.tone === "success"
-                  ? "linear-gradient(180deg, rgba(10, 40, 28, 0.96), rgba(11, 26, 21, 0.96))"
-                  : feedbackModal.tone === "error"
-                    ? "linear-gradient(180deg, rgba(47, 18, 24, 0.96), rgba(28, 13, 18, 0.96))"
-                    : "linear-gradient(180deg, rgba(20, 26, 42, 0.96), rgba(14, 19, 34, 0.96))",
-            }}
-          >
-            <div className="flex items-start gap-4 px-5 py-4">
-              <div
-                className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl"
-                style={{
-                  border:
-                    feedbackModal.tone === "success"
-                      ? "1px solid rgba(74, 222, 128, 0.2)"
-                      : feedbackModal.tone === "error"
-                        ? "1px solid rgba(248, 113, 113, 0.2)"
-                        : "1px solid rgba(251, 191, 36, 0.2)",
-                  background:
-                    feedbackModal.tone === "success"
-                      ? "rgba(74, 222, 128, 0.1)"
-                      : feedbackModal.tone === "error"
-                        ? "rgba(248, 113, 113, 0.1)"
-                        : "rgba(251, 191, 36, 0.1)",
-                }}
-              >
-                <span className="material-symbols-outlined text-[22px] text-white">
-                  {feedbackModal.tone === "success" ? "check_circle" : feedbackModal.tone === "error" ? "error" : "warning"}
-                </span>
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="text-[11px] font-black uppercase tracking-[0.22em] text-slate-200">{feedbackModal.title}</p>
-                <p className="mt-2 text-base font-semibold leading-relaxed text-slate-100">{feedbackModal.message}</p>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
       {isMetadataModalOpen && generatedMetadata && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={() => setIsMetadataModalOpen(false)}>
@@ -1148,8 +460,8 @@ export default function RegisterAgentPage() {
           >
             <header className="flex items-center justify-between border-b border-white/10 px-6 py-5">
               <div>
-                <p className="text-[11px] font-black uppercase tracking-[0.24em] text-cyan-300">Metadata Preview</p>
-                <h3 className="mt-1 text-xl font-semibold text-white">Generated Agent Metadata</h3>
+                <p className="text-[11px] font-black uppercase tracking-[0.24em] text-cyan-300">0G Metadata Preview</p>
+                <h3 className="mt-1 text-xl font-semibold text-white">Wallet-bound Agent Profile</h3>
               </div>
               <button
                 onClick={() => setIsMetadataModalOpen(false)}
@@ -1172,158 +484,62 @@ export default function RegisterAgentPage() {
               <div className="flex items-center gap-4 mb-6">
                 <span className="w-8 h-8 rounded-full bg-trust-blue flex items-center justify-center font-bold text-sm text-white">1</span>
                 <div>
-                  <h2 className="text-[20px] font-semibold text-white">Agent Identity</h2>
-                  <p className="text-sm text-slate-500">Owner-controlled DID plus generated UAID.</p>
+                  <h2 className="text-[20px] font-semibold text-white">Wallet-Based Identity</h2>
+                  <p className="text-sm text-slate-500">A lightweight wallet-based 0G agent profile for verification and trust workflows.</p>
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="rounded-[18px] border border-cyan-400/15 bg-[radial-gradient(circle_at_top_left,rgba(34,211,238,0.16),rgba(15,23,42,0.94)_62%)] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <p className="text-sm font-semibold text-white">Hedera DID</p>
-                      <p className="text-[11px] text-cyan-200/80">Owner-issued identity reference</p>
-                    </div>
-                    <div className={`rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.18em] ${isValidDidWeb(didWebValue) ? "bg-emerald-400/15 text-emerald-300" : "bg-white/10 text-slate-300"}`}>
-                      {isValidDidWeb(didWebValue) ? "ready" : "pending"}
-                    </div>
-                  </div>
-                  <label className="mt-4 block text-[11px] font-medium text-slate-300 mb-2">DID</label>
+              <div className="grid grid-cols-1 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-400 mb-2">Agent Name</label>
                   <input
-                    className="w-full bg-slate-950/70 border border-cyan-300/10 rounded-xl px-4 py-2.5 text-slate-200 focus:ring-2 focus:ring-cyan-400/40 focus:border-transparent outline-none"
-                    placeholder="did:hedera:testnet:DZv8..._0.0.2666979"
-                    value={didWebValue}
-                    onChange={(event) => setDidWebValue(event.target.value)}
+                    className="w-full bg-slate-900/50 border border-slate-700 rounded-lg px-4 py-3 text-slate-200 focus:ring-2 focus:ring-trust-blue outline-none"
+                    placeholder="e.g. Trust Router"
+                    value={agentName}
+                    onChange={(event) => setAgentName(event.target.value)}
                   />
-                  <p className="mt-2 text-[11px] leading-5 text-slate-400">Format: `did:hedera:&lt;network&gt;:&lt;identifier&gt;_&lt;topicId&gt;`</p>
-                </div>
-
-                <div className="rounded-[18px] border border-fuchsia-400/15 bg-[radial-gradient(circle_at_top_right,rgba(192,132,252,0.16),rgba(15,23,42,0.94)_62%)] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <p className="text-sm font-semibold text-white">UAID</p>
-                      <p className="text-[11px] text-fuchsia-200/80">Generated with the HCS-14 SDK</p>
-                    </div>
-                    <button
-                      onClick={copyUaid}
-                      disabled={!generatedUaid}
-                      className="rounded-xl border border-white/10 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:bg-white/5 disabled:opacity-50"
-                    >
-                      Copy
-                    </button>
-                  </div>
-                  <div className="mt-4 rounded-xl border border-fuchsia-200/10 bg-black/25 p-3 text-xs text-slate-200 break-all min-h-[62px]">
-                    {generatedUaid || "No UAID generated yet."}
-                  </div>
-                  <div className="mt-3 inline-flex items-center rounded-full border border-white/10 px-3 py-1 text-[11px] font-semibold text-slate-300">
-                    {generatedRecipe ? `${getRecipeBadge(generatedRecipe)} ready` : "Generate a UAID to continue"}
-                  </div>
                 </div>
               </div>
 
-              <div className="mt-5 rounded-[18px] border border-white/10 bg-[linear-gradient(180deg,rgba(9,17,31,0.9),rgba(8,12,24,0.76))] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
-                <div className="flex bg-black/40 p-1 rounded-[12px] border border-slate-700/50 gap-1">
-                  {([
-                    { key: "A2A", label: "A2A / Web2" },
-                    { key: "HEDERA_DID", label: "Hedera DID" },
-                    { key: "EVM", label: "EVM (EIP-155)" },
-                  ] as const).map((option) => (
-                    <button
-                      key={option.key}
-                      onClick={() => setUaidRecipe(option.key)}
-                      className={`flex-1 py-2 text-[11px] font-bold rounded-[8px] transition-all ${uaidRecipe === option.key ? "bg-gradient-to-r from-trust-blue to-trust-purple text-white shadow-[0_0_12px_rgba(59,130,246,0.5)]" : "text-slate-500 hover:text-slate-300"}`}
-                    >
-                      {option.label}
-                    </button>
-                  ))}
-                </div>
+              <div className="mt-4">
+                <label className="block text-sm font-medium text-slate-400 mb-2">Description</label>
+                <textarea
+                  className="h-[84px] w-full resize-none bg-slate-900/50 border border-slate-700 rounded-lg px-4 py-3 text-slate-200 focus:ring-2 focus:ring-trust-blue outline-none"
+                  placeholder="Describe how this agent participates in hybrid verification, trust, or orchestration."
+                  value={agentDescription}
+                  onChange={(event) => setAgentDescription(event.target.value)}
+                />
+              </div>
 
-                <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {uaidRecipe !== "HEDERA_DID" && (
-                    <div>
-                      <label className="block text-sm font-medium text-slate-300 mb-2">UAID Name</label>
-                      <input
-                        className="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-4 py-2 text-slate-200 focus:ring-1 focus:ring-trust-blue outline-none"
-                        placeholder="e.g. AgentTrust Router"
-                        value={uaidName}
-                        onChange={(event) => setUaidName(event.target.value)}
-                      />
-                    </div>
-                  )}
-                  <div>
-                    <label className="block text-sm font-medium text-slate-300 mb-2">Version</label>
-                    <input
-                      className="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-4 py-2 text-slate-200 focus:ring-1 focus:ring-trust-blue outline-none"
-                      value={uaidVersion}
-                      onChange={(event) => setUaidVersion(event.target.value)}
-                    />
-                  </div>
-                  {uaidRecipe === "A2A" && (
-                    <>
-                      <div>
-                        <label className="block text-sm font-medium text-slate-300 mb-2">Protocol</label>
-                        <select
-                          className="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-4 py-2 text-slate-200 focus:ring-1 focus:ring-trust-blue outline-none"
-                          value={uaidProtocol}
-                          onChange={(event) => setUaidProtocol(event.target.value as UaidProtocol)}
-                        >
-                          <option value="rest">REST</option>
-                          <option value="hcs-10">HCS-10</option>
-                          <option value="a2a">A2A</option>
-                        </select>
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-slate-300 mb-2">Native ID</label>
-                        <input
-                          className="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-4 py-2 text-slate-200 focus:ring-1 focus:ring-trust-blue outline-none"
-                          placeholder="service://router"
-                          value={uaidNativeId}
-                          onChange={(event) => setUaidNativeId(event.target.value)}
-                        />
-                      </div>
-                    </>
-                  )}
-                  {uaidRecipe === "EVM" && (
-                    <>
-                      <div>
-                        <label className="block text-sm font-medium text-slate-300 mb-2">Chain ID</label>
-                        <input
-                          className="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-4 py-2 text-slate-200 focus:ring-1 focus:ring-trust-blue outline-none"
-                          value={evmChainId}
-                          onChange={(event) => setEvmChainId(event.target.value)}
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-slate-300 mb-2">Address</label>
-                        <input
-                          className="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-4 py-2 text-slate-200 focus:ring-1 focus:ring-trust-blue outline-none"
-                          placeholder="0x..."
-                          value={evmAddress}
-                          onChange={(event) => setEvmAddress(event.target.value)}
-                        />
-                      </div>
-                    </>
-                  )}
-                  {uaidRecipe !== "HEDERA_DID" && (
-                    <div className="md:col-span-2">
-                      <label className="block text-sm font-medium text-slate-300 mb-2">Skills (comma-separated)</label>
-                      <input
-                        className="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-4 py-2 text-slate-200 focus:ring-1 focus:ring-trust-blue outline-none"
-                        placeholder="0, 4, 17, 50301"
-                        value={uaidSkillsInput}
-                        onChange={(event) => setUaidSkillsInput(event.target.value)}
-                      />
-                    </div>
-                  )}
+              <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-400 mb-2">Primary Capability</label>
+                  <input
+                    className="w-full bg-slate-900/50 border border-slate-700 rounded-lg px-4 py-3 text-slate-200 focus:ring-2 focus:ring-trust-blue outline-none"
+                    placeholder="e.g. reasoning-verification"
+                    value={capabilityName}
+                    onChange={(event) => setCapabilityName(event.target.value)}
+                  />
                 </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-400 mb-2">Endpoint</label>
+                  <input
+                    className="w-full bg-slate-900/50 border border-slate-700 rounded-lg px-4 py-3 text-slate-200 focus:ring-2 focus:ring-trust-blue outline-none"
+                    placeholder="/agent/execute"
+                    value={endpoint}
+                    onChange={(event) => setEndpoint(event.target.value)}
+                  />
+                </div>
+              </div>
 
-                <button
-                  onClick={generateUaid}
-                  disabled={isGeneratingUaid}
-                  className="mt-5 h-[48px] rounded-[14px] bg-vibrant-gradient px-6 text-sm font-bold text-white shadow-[0_8px_25px_-5px_rgba(111,140,255,0.4)] disabled:opacity-60"
-                >
-                  {isGeneratingUaid ? "Generating UAID..." : "Generate UAID"}
-                </button>
+              <div className="mt-4">
+                <label className="block text-sm font-medium text-slate-400 mb-2">Capabilities (comma-separated)</label>
+                <input
+                  className="w-full bg-slate-900/50 border border-slate-700 rounded-lg px-4 py-3 text-slate-200 focus:ring-2 focus:ring-trust-blue outline-none"
+                  placeholder="analysis, memory, validator-selection"
+                  value={capabilityTags}
+                  onChange={(event) => setCapabilityTags(event.target.value)}
+                />
               </div>
             </div>
 
@@ -1331,143 +547,49 @@ export default function RegisterAgentPage() {
               <div className="flex items-center gap-4 mb-6">
                 <span className="w-8 h-8 rounded-full bg-trust-blue flex items-center justify-center font-bold text-sm text-white">2</span>
                 <div>
-                  <h2 className="text-[20px] font-semibold text-white">Agent Configuration</h2>
-                  <p className="text-sm text-slate-500">Define what the agent is and how it executes.</p>
+                  <h2 className="text-[20px] font-semibold text-white">Verification Profile</h2>
+                  <p className="text-sm text-slate-500">Define how this agent behaves inside the hybrid verification and trust pipeline.</p>
                 </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                <div>
-                  <label className="block text-sm font-medium text-slate-400 mb-2">Agent Name</label>
-                  <input
-                    className="w-full bg-slate-900/50 border border-slate-700 rounded-lg px-4 py-3 text-slate-200 focus:ring-2 focus:ring-trust-blue outline-none"
-                    placeholder="e.g. Multi-Protocol Agent"
-                    value={agentName}
-                    onChange={(event) => setAgentName(event.target.value)}
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-400 mb-2">Endpoint</label>
-                  <input
-                    className="w-full bg-slate-900/50 border border-slate-700 rounded-lg px-4 py-3 text-slate-200 focus:ring-2 focus:ring-trust-blue outline-none"
-                    placeholder="https://agent.example.com"
-                    value={endpoint}
-                    onChange={(event) => setEndpoint(event.target.value)}
-                  />
-                </div>
-              </div>
-
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-slate-400 mb-2">Description</label>
-                <textarea
-                  className="h-[76px] w-full resize-none bg-slate-900/50 border border-slate-700 rounded-lg px-4 py-2.5 text-slate-200 focus:ring-1 focus:ring-trust-blue outline-none"
-                  placeholder="Describe the agent and the behavior users should expect..."
-                  rows={2}
-                  value={agentDescription}
-                  onChange={(event) => setAgentDescription(event.target.value)}
-                />
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                <div>
-                  <label className="block text-sm font-medium text-slate-400 mb-2">Skill ID</label>
-                  <input
-                    className="w-full bg-slate-900/50 border border-slate-700 rounded-lg px-4 py-2 text-slate-200 focus:ring-1 focus:ring-trust-blue outline-none"
-                    placeholder="e.g. 4 or 50301"
-                    value={capabilitySkillId}
-                    onChange={(event) => setCapabilitySkillId(event.target.value)}
-                  />
-                  <p className="mt-2 text-[11px] text-slate-500">Accepts HCS-14 `0-39` and OASF `100+`. `40-99` stays reserved.</p>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-400 mb-2">Capability Name</label>
-                  <input
-                    className="w-full bg-slate-900/50 border border-slate-700 rounded-lg px-4 py-2 text-slate-200 focus:ring-1 focus:ring-trust-blue outline-none"
-                    placeholder="e.g. API Integration"
-                    value={capabilityName}
-                    onChange={(event) => setCapabilityName(event.target.value)}
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-                <div>
-                  <label className="block text-sm font-medium text-slate-400 mb-2">Domain</label>
-                  <select
-                    className="w-full bg-slate-900/50 border border-slate-700 rounded-lg px-4 py-2 text-slate-200 focus:ring-1 focus:ring-trust-blue outline-none"
-                    value={domain}
-                    onChange={(event) => setDomain(event.target.value)}
-                  >
-                    {domainOptions.map((option) => (
-                      <option key={option}>{option}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-3 gap-3 mb-6">
-                {riskOptions.map((opt) => (
-                  <button
-                    key={opt.key}
-                    onClick={() => setRiskLevel(opt.key)}
-                    className={`h-[84px] rounded-xl border text-center transition-all hover:-translate-y-0.5 ${riskLevel === opt.key ? "border-trust-blue-glow bg-trust-blue/10 shadow-[0_0_15px_rgba(91,140,255,0.3)]" : "border-slate-700 hover:border-slate-500 bg-transparent"}`}
-                  >
-                    <p className={`pt-3 text-[11px] font-bold uppercase tracking-wider mb-1 ${riskLevel === opt.key ? "text-trust-blue" : "text-slate-400"}`}>{opt.label}</p>
-                    <p className="text-xs text-slate-300 font-semibold">{formatHbarAmount(stakeOptions[opt.key])} HBAR</p>
-                  </button>
-                ))}
-              </div>
-
-              <div className="flex flex-col gap-3 p-4 bg-slate-900/40 rounded-xl border border-slate-800 mb-4">
-                <div>
-                  <p className="text-sm font-medium text-slate-200">Execution Mode</p>
-                  <p className="text-xs text-slate-500">Used for both metadata and validation strategy.</p>
-                </div>
-                <div className="flex bg-black/40 p-1 rounded-[12px] border border-slate-700/50">
-                  <button
-                    onClick={() => setExecMode("deterministic")}
-                    className={`flex-1 py-2 text-xs font-bold rounded-[8px] transition-all ${execMode === "deterministic" ? "bg-gradient-to-r from-trust-blue to-trust-purple text-white shadow-[0_0_12px_rgba(59,130,246,0.5)]" : "text-slate-500 hover:text-slate-300"}`}
-                  >
-                    DETERMINISTIC
-                  </button>
-                  <button
-                    onClick={() => setExecMode("non-deterministic")}
-                    className={`flex-1 py-2 text-xs font-bold rounded-[8px] transition-all ${execMode === "non-deterministic" ? "bg-gradient-to-r from-trust-blue to-trust-purple text-white shadow-[0_0_12px_rgba(59,130,246,0.5)]" : "text-slate-500 hover:text-slate-300"}`}
-                  >
-                    NON-DETERMINISTIC
-                  </button>
-                </div>
-              </div>
-
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-slate-400 mb-2">Expected Reasoning</label>
-                <textarea
-                  className="w-full bg-slate-900/50 border border-slate-700 rounded-lg px-4 py-2 text-slate-200 focus:ring-1 focus:ring-trust-blue outline-none"
-                  placeholder="The logic steps the agent must follow..."
-                  rows={2}
-                  value={expectedReasoning}
-                  onChange={(event) => setExpectedReasoning(event.target.value)}
-                />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-slate-400 mb-2">Output Schema (JSON)</label>
-                <textarea
-                  className="w-full border border-slate-700 rounded-lg p-4 font-mono text-xs text-green-300 overflow-x-auto bg-[#01020e] outline-none focus:ring-1 focus:ring-trust-blue min-h-[130px]"
-                  value={outputSchema}
-                  onChange={(event) => setOutputSchema(event.target.value)}
-                />
+                <label className="block text-sm font-medium text-slate-400 mb-2">Execution Mode</label>
+                <div className="flex bg-black/40 p-1 rounded-[12px] border border-slate-700/50">
+                  {execModeOptions.map((option) => (
+                    <button
+                      key={option.key}
+                      onClick={() => setExecMode(option.key)}
+                      className={`flex-1 py-2 text-xs font-bold rounded-[8px] transition-all ${execMode === option.key ? "bg-gradient-to-r from-trust-blue to-trust-purple text-white shadow-[0_0_12px_rgba(59,130,246,0.5)]" : "text-slate-500 hover:text-slate-300"}`}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="mt-6">
+                <label className="block text-sm font-medium text-slate-400 mb-2">Risk Level</label>
+                <div className="grid grid-cols-3 gap-3">
+                  {riskOptions.map((option) => (
+                    <button
+                      key={option.key}
+                      onClick={() => setRiskLevel(option.key)}
+                      className={`h-[84px] rounded-xl border text-center transition-all hover:-translate-y-0.5 ${riskLevel === option.key ? "border-trust-blue-glow bg-trust-blue/10 shadow-[0_0_15px_rgba(91,140,255,0.3)]" : "border-slate-700 hover:border-slate-500 bg-transparent"}`}
+                    >
+                      <p className={`pt-3 text-[11px] font-bold uppercase tracking-wider mb-1 ${riskLevel === option.key ? "text-trust-blue" : "text-slate-400"}`}>{option.label}</p>
+                      <p className="text-xs text-slate-300 font-semibold">{formatAmount(stakeOptions[option.key])} OG</p>
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
 
-            <div
-              className={`glass-effect rounded-[22px] p-7 border transition-all duration-300 ${generatedMetadataUri ? "border-emerald-400/35 shadow-[0_0_32px_rgba(16,185,129,0.14)]" : "border-white/10 shadow-[0_24px_70px_rgba(4,10,25,0.34)]"}`}
-            >
+            <div className={`glass-effect rounded-[22px] p-7 border transition-all duration-300 ${metadataReady ? "border-emerald-400/35 shadow-[0_0_32px_rgba(16,185,129,0.14)]" : "border-white/10 shadow-[0_24px_70px_rgba(4,10,25,0.34)]"}`}>
               <div className="flex items-center gap-4 mb-6">
                 <span className="w-8 h-8 rounded-full bg-trust-blue flex items-center justify-center font-bold text-sm text-white">3</span>
                 <div>
-                  <h2 className="text-[20px] font-semibold text-white">Metadata Generation</h2>
-                  <p className="text-sm text-slate-500">Metadata is generated and stored on IPFS automatically based on your configuration.</p>
+                  <h2 className="text-[20px] font-semibold text-white">0G Metadata Storage</h2>
+                  <p className="text-sm text-slate-500">Agent metadata is stored in 0G Storage and reused as the profile root across the trust system.</p>
                 </div>
               </div>
 
@@ -1475,15 +597,15 @@ export default function RegisterAgentPage() {
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                   <div>
                     <p className="text-sm font-semibold text-white">
-                      {generatedMetadataUri ? "Metadata stored on IPFS" : "Metadata not generated"}
+                      {metadataReady ? "Metadata stored on 0G Storage" : "Metadata not generated"}
                     </p>
-                    <p className="mt-1 text-xs text-slate-400">
-                      {generatedMetadataUri ? generatedMetadataUri : "Generate metadata to produce the final contract-ready metadata URI."}
+                    <p className="mt-1 text-xs text-slate-400 break-all">
+                      {metadataReady ? generatedMetadataHash : "Generate metadata to produce the wallet-bound 0G storage root."}
                     </p>
                   </div>
                   {generatedCid && (
                     <div className="rounded-full border border-emerald-400/25 bg-emerald-400/10 px-3 py-1 text-[11px] font-semibold text-emerald-300">
-                      CID: {generatedCid}
+                      CID / Root: {generatedCid.slice(0, 18)}...
                     </div>
                   )}
                 </div>
@@ -1494,7 +616,7 @@ export default function RegisterAgentPage() {
                     disabled={isGeneratingMetadata}
                     className="h-[48px] rounded-[14px] bg-vibrant-gradient px-6 text-sm font-bold text-white shadow-[0_8px_25px_-5px_rgba(111,140,255,0.4)] disabled:opacity-60"
                   >
-                    {isGeneratingMetadata ? "Generating Metadata..." : "Generate Metadata"}
+                    {isGeneratingMetadata ? "Generating Metadata..." : "Generate 0G Metadata"}
                   </button>
                   <button
                     onClick={() => setIsMetadataModalOpen(true)}
@@ -1504,34 +626,22 @@ export default function RegisterAgentPage() {
                     Show Metadata
                   </button>
                 </div>
-
-                <div className="mt-5 grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
-                  <div className={`rounded-xl border px-4 py-3 ${isValidDidWeb(didWebValue) ? "border-emerald-400/25 bg-emerald-400/10 text-emerald-200" : "border-white/10 bg-white/5 text-slate-400"}`}>
-                    DID {isValidDidWeb(didWebValue) ? "ready" : "required"}
-                  </div>
-                  <div className={`rounded-xl border px-4 py-3 ${generatedUaid ? "border-emerald-400/25 bg-emerald-400/10 text-emerald-200" : "border-white/10 bg-white/5 text-slate-400"}`}>
-                    UAID {generatedUaid ? "generated" : "required"}
-                  </div>
-                  <div className={`rounded-xl border px-4 py-3 ${generatedMetadataUri ? "border-emerald-400/25 bg-emerald-400/10 text-emerald-200" : "border-white/10 bg-white/5 text-slate-400"}`}>
-                    Metadata {generatedMetadataUri ? "uploaded" : "required"}
-                  </div>
-                </div>
               </div>
             </div>
 
             <div className="glass-effect rounded-[24px] p-8 border border-trust-blue/15 bg-[radial-gradient(circle_at_top,rgba(79,70,229,0.22),rgba(9,14,28,0.94)_58%)] shadow-[0_26px_80px_rgba(37,99,235,0.18)]">
               <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-6">
                 <div>
-                  <p className="text-slate-400 mb-1 text-base">Required Security Deposit</p>
+                  <p className="text-slate-400 mb-1 text-base">Validator / Agent Collateral</p>
                   <span className="font-bold text-white tracking-tight text-3xl">{requiredStakeLabel}</span>
                 </div>
                 <p className="max-w-md text-sm text-slate-300">
-                  Registration stays disabled until the owner DID, generated UAID, and IPFS metadata are all ready.
+                  Registration stays disabled until the wallet-based profile is complete and the 0G metadata root has been created.
                 </p>
                 <button
                   onClick={registerAgent}
-                  disabled={!canRegister || isSubmitting || isLoadingStake}
-                  className={`min-w-[220px] h-[60px] rounded-[18px] px-10 text-base font-black tracking-[0.04em] transition-all ${canRegister && !isSubmitting ? "bg-vibrant-gradient text-white shadow-[0_16px_40px_-10px_rgba(111,140,255,0.72),0_0_0_1px_rgba(255,255,255,0.08)] hover:brightness-110 hover:-translate-y-1" : "bg-slate-800/80 text-slate-500 cursor-not-allowed border border-white/5"}`}
+                  disabled={!registrationReady || isSubmitting || isLoadingStake}
+                  className={`min-w-[220px] h-[60px] rounded-[18px] px-10 text-base font-black tracking-[0.04em] transition-all ${registrationReady && !isSubmitting ? "bg-vibrant-gradient text-white shadow-[0_16px_40px_-10px_rgba(111,140,255,0.72),0_0_0_1px_rgba(255,255,255,0.08)] hover:brightness-110 hover:-translate-y-1" : "bg-slate-800/80 text-slate-500 cursor-not-allowed border border-white/5"}`}
                 >
                   {isSubmitting ? "Registering..." : "Register Agent"}
                 </button>
@@ -1546,7 +656,7 @@ export default function RegisterAgentPage() {
             >
               <div className="p-5 border-b border-white/5">
                 <h3 className="text-[20px] font-bold text-white">Protocol Logs</h3>
-                <p className="text-xs text-slate-500">Pinned side rail for local workflow and on-chain status.</p>
+                <p className="text-xs text-slate-500">0G-native registration and trust activity stream.</p>
               </div>
               <div className="flex-1 min-h-0 bg-[rgba(8,14,28,0.95)] p-6 font-mono text-[14px] overflow-y-auto custom-scrollbar">
                 <div className="space-y-4 break-words">
@@ -1561,12 +671,11 @@ export default function RegisterAgentPage() {
                       </div>
                     ))
                   ) : (
-                    <p className="text-slate-500 opacity-80">No protocol activity yet. Generate metadata or register an agent to populate the feed.</p>
+                    <p className="text-slate-500 opacity-80">No 0G registration activity yet. Generate metadata or register an agent to populate the feed.</p>
                   )}
                 </div>
               </div>
             </div>
-
           </aside>
         </div>
       </main>

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import AgentDetailsModal from "@/components/AgentDetailsModal";
 import ComposeTaskModal from "@/components/ComposeTaskModal";
-import { authorizeAgentCapabilities, fetchAgents, revokeRegisteredAgent, type Agent } from "@/lib/hedera";
+import { authorizeAgentCapabilities, fetchAgents, revokeRegisteredAgent, type Agent } from "@/lib/zerog-runtime";
 import { toast } from "@/components/ui/sonner";
 
 const staticAgents: Agent[] = [

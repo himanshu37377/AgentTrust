@@ -11,6 +11,10 @@ export default defineConfig(() => ({
       overlay: false,
     },
     proxy: {
+      "/api": {
+        target: "http://localhost:3001",
+        changeOrigin: true,
+      },
       "/metadata/upload": {
         target: "http://localhost:3001",
         changeOrigin: true,
@@ -21,10 +25,6 @@ export default defineConfig(() => ({
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
-      "@hashgraphonline/standards-sdk/hcs14": path.resolve(
-        __dirname,
-        "./node_modules/@hashgraphonline/standards-sdk/dist/es/standards-sdk.es56.js",
-      ),
     },
   },
 }));

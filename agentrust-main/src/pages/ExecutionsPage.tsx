@@ -1,5 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
-import { fetchExecutionAuditTrail, fetchExecutionHistory, type ExecutionAuditTrail, type ExecutionHistoryEntry } from "@/lib/hedera";
+import { toast } from "@/components/ui/use-toast";
+import {
+  computeExecutionHistoryStats,
+  fetchExecutionHistory,
+  formatExecutionHistoryStatCards,
+  getZeroGStorageExplorerUrl,
+  getZeroGTransactionExplorerUrl,
+  type ExecutionHistoryEntry,
+} from "@/lib/zerog-runtime";
 
 const fallbackExecutions: ExecutionHistoryEntry[] = [
   {
@@ -50,21 +58,21 @@ const fallbackExecutions: ExecutionHistoryEntry[] = [
   {
     id: "fallback-4",
     txHash: "0x2d919929a5b2",
-    source: "Staking",
-    eventType: "Staked",
+    source: "0G",
+    eventType: "MemoryPersisted",
     entity: "Agent RiskAnalyzer",
-    eventClass: "Staking",
-    eventColor: "text-emerald-400",
-    outcome: "Staked",
-    outcomeColor: "text-emerald-400",
+    eventClass: "Memory",
+    eventColor: "text-cyan-300",
+    outcome: "Persisted",
+    outcomeColor: "text-cyan-300",
     timestampLabel: "15:59:04",
     timestampValue: Date.now() - 300000,
-    description: "Stake deposited for agent",
-    detailJson: JSON.stringify({ agent: "RiskAnalyzer", amount: "500 HBAR" }, null, 2),
+    description: "Persistent memory committed to 0G Storage",
+    detailJson: JSON.stringify({ agent: "RiskAnalyzer", provenance: "confirmed", storageHash: "0xmem..." }, null, 2),
   },
 ];
 
-const filters = ["All", "Validation", "Reputation", "Staking", "AgentRegistry", "Accepted", "Rejected"];
+const filters = ["All", "Validation", "Reputation", "0G", "AgentRegistry", "Accepted", "Rejected"];
 const PAGE_SIZE = 15;
 
 export default function ExecutionsPage() {
@@ -74,7 +82,6 @@ export default function ExecutionsPage() {
   const [historyEntries, setHistoryEntries] = useState<ExecutionHistoryEntry[]>(fallbackExecutions);
   const [isLoading, setIsLoading] = useState(true);
   const [currentPage, setCurrentPage] = useState(1);
-  const [auditTrail, setAuditTrail] = useState<ExecutionAuditTrail | null>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -146,29 +153,6 @@ export default function ExecutionsPage() {
     }
   }, [paginatedEntries, selectedExecution.id]);
 
-  useEffect(() => {
-    let isMounted = true;
-
-    const loadAuditTrail = async () => {
-      try {
-        const nextAuditTrail = await fetchExecutionAuditTrail(selectedExecution);
-        if (isMounted) {
-          setAuditTrail(nextAuditTrail);
-        }
-      } catch {
-        if (isMounted) {
-          setAuditTrail(null);
-        }
-      }
-    };
-
-    void loadAuditTrail();
-
-    return () => {
-      isMounted = false;
-    };
-  }, [selectedExecution]);
-
   const parsedEventDetail = useMemo(() => {
     try {
       const parsed = JSON.parse(selectedExecution.detailJson) as Record<string, unknown>;
@@ -178,30 +162,33 @@ export default function ExecutionsPage() {
     }
   }, [selectedExecution.detailJson]);
 
-  const inspectionJson = useMemo(() => {
-    return JSON.stringify(
-      {
-        event: {
-          id: selectedExecution.id,
-          type: selectedExecution.eventType,
-          source: selectedExecution.source,
-          class: selectedExecution.eventClass,
-          entity: selectedExecution.entity,
-          outcome: selectedExecution.outcome,
-          txHash: selectedExecution.txHash,
-          timestamp: {
-            label: selectedExecution.timestampLabel,
-            value: selectedExecution.timestampValue,
-          },
-          description: selectedExecution.description,
-        },
-        emittedArgs: parsedEventDetail,
-        ...(auditTrail ? { auditTrail } : {}),
-      },
-      null,
-      2,
-    );
-  }, [auditTrail, parsedEventDetail, selectedExecution]);
+  const selectedTxExplorerUrl = useMemo(
+    () => getZeroGTransactionExplorerUrl(selectedExecution.txHash),
+    [selectedExecution.txHash],
+  );
+
+  const historyStats = useMemo(
+    () => computeExecutionHistoryStats(historyEntries),
+    [historyEntries],
+  );
+
+  const statCards = useMemo(
+    () => formatExecutionHistoryStatCards(historyStats, isLoading),
+    [historyStats, isLoading],
+  );
+
+  const storageHints = useMemo(() => {
+    const storageHash =
+      typeof parsedEventDetail.storageHash === "string" ? String(parsedEventDetail.storageHash).trim() : "";
+    const storageTxSeq =
+      typeof parsedEventDetail.storageTxSeq === "number"
+        ? parsedEventDetail.storageTxSeq
+        : typeof parsedEventDetail.txSeq === "number"
+          ? parsedEventDetail.txSeq
+          : undefined;
+    const url = getZeroGStorageExplorerUrl(storageHash || undefined, storageTxSeq);
+    return { storageHash, storageTxSeq, url };
+  }, [parsedEventDetail]);
 
   return (
     <div className="relative z-10 max-w-[1280px] mx-auto px-6 py-10">
@@ -217,23 +204,22 @@ export default function ExecutionsPage() {
           Execution <span className="text-gradient">History</span>
         </h1>
         <p className="text-slate-400 text-lg max-w-2xl leading-relaxed">
-          Transparent audit trail of AI agent executions, validator consensus, and protocol verification events. All operations are cryptographically secured.
+          Transparent audit trail of AI agent executions, persistent 0G memory updates, validator consensus, and trust-layer verification events.
         </p>
       </section>
 
       {/* Stats */}
       <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
-        {[
-          { label: "Total Executions", value: "1,284,092", badge: "+12.5%", badgeColor: "text-green-400 bg-green-400/10" },
-          { label: "Successful", value: "99.2%", badge: null },
-          { label: "Rejected", value: "432", badge: "Consensus Fail", badgeColor: "text-red-400 bg-red-400/10" },
-          { label: "Deterministic", value: "84%", badge: "zk-Proof", badgeColor: "text-purple-400 bg-purple-400/10" },
-        ].map((s) => (
+        {statCards.map((s) => (
           <div key={s.label} className="glass-effect p-6 rounded-twelve hover:translate-y-[-4px] transition-all duration-300 group min-h-[120px]">
             <p className="text-slate-400 text-sm mb-2 font-medium">{s.label}</p>
             <div className="flex items-end justify-between">
               <h3 className="text-3xl font-bold text-white">{s.value}</h3>
-              {s.badge && <span className={`${s.badgeColor} text-xs font-mono px-2 py-1 rounded`}>{s.badge}</span>}
+              {s.badge ? (
+                <span className={`${s.badgeColor ?? "text-slate-400 bg-white/5"} text-xs font-mono px-2 py-1 rounded`}>
+                  {s.badge}
+                </span>
+              ) : null}
             </div>
           </div>
         ))}
@@ -303,10 +289,7 @@ export default function ExecutionsPage() {
                     onClick={() => setSelectedExecution(ex)}
                   >
                     <td className="px-6 py-4">
-                      <div className="flex flex-col">
-                        <span className="text-white font-semibold">{ex.eventType}</span>
-                        <span className="text-[10px] text-slate-500 font-mono break-all">{ex.txHash}</span>
-                      </div>
+                      <span className="text-white font-semibold">{ex.eventType}</span>
                     </td>
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-2">
@@ -324,10 +307,22 @@ export default function ExecutionsPage() {
                     </td>
                     <td className="px-6 py-4 text-right">
                       <button
+                        type="button"
                         className="text-brand-primary border border-brand-primary/25 px-3 py-1 rounded-full hover:bg-brand-primary hover:text-white hover:shadow-[0_0_20px_rgba(88,113,255,0.45)] transition-all text-xs font-medium"
                         onClick={(event) => {
                           event.stopPropagation();
                           setSelectedExecution(ex);
+                          const url = getZeroGTransactionExplorerUrl(ex.txHash);
+                          if (url) {
+                            window.open(url, "_blank", "noopener,noreferrer");
+                          } else {
+                            toast({
+                              title: "No chain transaction link",
+                              description:
+                                "This row does not use a full 64-byte 0x hash, so it cannot be opened on 0G Chainscan. Use the inspection panel for raw event details.",
+                              variant: "destructive",
+                            });
+                          }
                         }}
                       >
                         Inspect
@@ -379,69 +374,64 @@ export default function ExecutionsPage() {
                 <h4 className="text-sm font-bold text-white uppercase tracking-wider break-words">
                   Inspection: {selectedExecution.eventType}
                 </h4>
-                <p className="text-[10px] text-slate-500 font-mono mt-1 break-all">TX: {selectedExecution.txHash}</p>
+                {selectedTxExplorerUrl ? (
+                  <a
+                    href={selectedTxExplorerUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mt-2 inline-flex text-[11px] font-semibold text-brand-primary hover:underline"
+                  >
+                    View transaction on 0G Chainscan
+                  </a>
+                ) : (
+                  <p className="text-[10px] text-slate-500 font-mono mt-1 break-all">Tx / anchor: {selectedExecution.txHash}</p>
+                )}
               </div>
               <span className={`px-2 py-1 rounded text-[10px] font-bold border ${selectedExecution.outcomeColor} border-white/10 bg-white/5`}>
                 {selectedExecution.outcome.toUpperCase()}
               </span>
             </div>
-            <div className="space-y-6 flex flex-col">
-              <div className="flex flex-col gap-2">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Event Metadata</span>
-                <div className="grid grid-cols-2 gap-3">
-                  {[
-                    {
-                      label: "Agent ID",
-                      value:
-                        (typeof parsedEventDetail.agentId === "string" || typeof parsedEventDetail.agentId === "number"
-                          ? String(parsedEventDetail.agentId)
-                          : selectedExecution.entity.match(/#(\d+)/)?.[1]) ?? "N/A",
-                    },
-                    {
-                      label: "Execution ID",
-                      value:
-                        (typeof parsedEventDetail.executionId === "string" || typeof parsedEventDetail.executionId === "number"
-                          ? String(parsedEventDetail.executionId)
-                          : selectedExecution.description.match(/#(\d+)/)?.[1]) ?? "N/A",
-                    },
-                  ].map((meta) => (
-                    <div key={meta.label} className="bg-black/40 p-3 rounded-lg border border-white/10 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03)]">
-                      <p className="text-[10px] text-slate-500 mb-1 uppercase tracking-wider">{meta.label}</p>
-                      <p className="text-xs text-slate-200 font-mono break-all">{meta.value}</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
+            <div className="space-y-4 flex flex-col text-sm">
+              <p className="text-slate-300 leading-relaxed">{selectedExecution.description}</p>
 
-              <div className="flex flex-col gap-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Emitted Event Args</span>
-                  <span className="text-[10px] text-slate-500 font-mono">{Object.keys(parsedEventDetail).length} fields</span>
+              {(selectedExecution.eventClass === "0G" || selectedExecution.source === "0G") && storageHints.storageHash ? (
+                <div className="rounded-lg border border-cyan-500/20 bg-cyan-500/5 px-3 py-2.5 space-y-2">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-cyan-200/90">0G Storage (not on Chainscan)</p>
+                  {storageHints.url ? (
+                    <a
+                      href={storageHints.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex text-xs font-semibold text-cyan-300 hover:underline"
+                    >
+                      Open file via indexer (txSeq / root)
+                    </a>
+                  ) : (
+                    <p className="text-[11px] font-mono text-slate-400 break-all">Root: {storageHints.storageHash}</p>
+                  )}
+                  {typeof storageHints.storageTxSeq === "number" && storageHints.storageTxSeq > 0 ? (
+                    <p className="text-[10px] text-slate-500">Indexer txSeq: {storageHints.storageTxSeq}</p>
+                  ) : null}
                 </div>
-                <div className="bg-slate-950/90 rounded-lg border border-white/10 p-3 shadow-[0_10px_30px_rgba(0,0,0,0.35)]">
-                  <div className="flex flex-wrap gap-2">
-                    {Object.entries(parsedEventDetail).map(([key, value]) => (
-                      <div key={key} className="rounded-md border border-white/10 bg-white/5 px-2.5 py-1.5">
-                        <p className="text-[10px] text-slate-500 uppercase tracking-wide">{key}</p>
-                        <p className="text-xs text-slate-200 font-mono break-all">{typeof value === "string" ? value : JSON.stringify(value)}</p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
+              ) : null}
 
-              <div className="flex flex-col gap-2">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Full Event Details</span>
-                <div className="bg-slate-950/90 rounded-lg border border-white/10 font-mono text-xs overflow-hidden flex flex-col shadow-[0_10px_30px_rgba(0,0,0,0.35)]">
-                  <div className="px-3 py-2 bg-white/5 border-b border-white/5 flex items-center justify-between">
-                    <span className="text-[10px] text-slate-500 uppercase">Inspection JSON</span>
-                    <span className="w-2 h-2 rounded-full bg-brand-primary" />
-                  </div>
-                  <div className="p-4 min-h-[320px] max-h-[420px] overflow-auto">
-                    <pre className="leading-relaxed break-words-all"><code className="block w-full">{inspectionJson}</code></pre>
-                  </div>
+              {(selectedExecution.eventClass === "0G" || selectedExecution.source === "0G") &&
+              typeof parsedEventDetail.task === "string" &&
+              parsedEventDetail.task.trim() ? (
+                <div className="rounded-lg border border-white/10 bg-black/30 px-3 py-2">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Task (from memory log)</p>
+                  <p className="text-xs text-slate-300 whitespace-pre-wrap break-words">{String(parsedEventDetail.task)}</p>
                 </div>
-              </div>
+              ) : null}
+
+              <details className="rounded-lg border border-white/10 bg-slate-950/60">
+                <summary className="cursor-pointer select-none px-3 py-2 text-[11px] font-semibold text-slate-400 hover:text-slate-200">
+                  Raw event payload
+                </summary>
+                <pre className="max-h-48 overflow-auto border-t border-black bg-black p-3 text-[11px] leading-relaxed font-mono text-[#39ff14] [text-shadow:0_0_1px_rgba(0,0,0,0.9)] selection:bg-lime-400 selection:text-black">
+                  {JSON.stringify(parsedEventDetail, null, 2)}
+                </pre>
+              </details>
             </div>
           </div>
 

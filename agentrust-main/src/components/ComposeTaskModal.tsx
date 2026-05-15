@@ -1,5 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import {
+  anchorReasoningExecution,
+  buildExecutionMemoryPayload,
   computeDeterministicBindingHash,
   computeReasoningHash,
   executeAgentTask,
@@ -7,13 +10,16 @@ import {
   fetchExecutionStatus,
   fetchAgentExecutionMetadata,
   formatDisplayError,
+  persistExecutionMemoryRecord,
   submitDeterministicExecutionHash,
   submitAgentReview,
   type AgentExecutionResponse,
+  uploadExecutionMemoryEnvelope,
   verifyWithBackend,
   verifyDeterministicExecution,
-} from "@/lib/hedera";
+} from "@/lib/zerog-runtime";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { toast } from "@/components/ui/use-toast";
 
 interface ComposeTaskModalProps {
   agentId: number;
@@ -97,20 +103,20 @@ const initialVerificationSteps = (mode: VerificationMode): VerificationStep[] =>
         },
         {
           key: "submit",
-          label: "3. On-chain Submit",
-          detail: "Submit execution commitment, reasoning hash, and execution context to ValidationRegistry.",
+          label: "3. Memory Anchor",
+          detail: "Prepare the provenance-tagged execution envelope for 0G storage and trust anchoring.",
           status: "idle",
         },
         {
           key: "review",
-          label: "4. Validator Vote",
-          detail: "Publish a validator review card with expected reasoning, output schema, execution context, reasoning, and output.",
+          label: "4. Validator Ensemble",
+          detail: "Run ValidatorAgent_1 and ValidatorAgent_2 as isolated validation executions, then aggregate their verdicts.",
           status: "idle",
         },
         {
           key: "verify",
-          label: "5. Final Verify",
-          detail: "Check execution finalization status after validator votes and read accepted/rejected from the contract.",
+          label: "5. Trust + Memory",
+          detail: "Anchor the reasoning outcome on-chain, update behavioral trust, and persist the memory CID.",
           status: "idle",
         },
       ];
@@ -152,6 +158,7 @@ export default function ComposeTaskModal({
   const [verifierModel, setVerifierModel] = useState<string>(verifierModelLabel);
   const [showVerificationPanel, setShowVerificationPanel] = useState(false);
   const [verificationMode, setVerificationMode] = useState<VerificationMode>("deterministic");
+  const [reasoningUiConfidencePct, setReasoningUiConfidencePct] = useState<number | null>(null);
   const [expectedReasoningTemplate, setExpectedReasoningTemplate] = useState("");
   const [outputSchemaTemplate, setOutputSchemaTemplate] = useState("");
   const [capabilityName, setCapabilityName] = useState<string>(capabilities[0] || "calculator");
@@ -164,7 +171,7 @@ export default function ComposeTaskModal({
     () => (activeVerificationIndex >= 0 ? verificationSteps[activeVerificationIndex] : verificationSteps[0]),
     [activeVerificationIndex, verificationSteps],
   );
-  const chatHeight = showVerificationPanel ? "h-[270px]" : "h-[360px]";
+  const chatHeight = showVerificationPanel ? "h-[300px]" : "h-[360px]";
   const liveStepDetail = useMemo(
     () => splitTxDetail(activeVerificationStep?.detail ?? verificationSummary),
     [activeVerificationStep, verificationSummary],
@@ -191,7 +198,7 @@ export default function ComposeTaskModal({
           ...prev,
           {
             from: "agent",
-            text: `Connected to agent endpoint from IPFS metadata (${metadata.metadataUri}). Verification mode: ${metadata.isDeterministic ? "Deterministic" : "Non-deterministic"}.`,
+            text: `Connected to agent endpoint from the 0G metadata root (${metadata.metadataUri}). Verification mode: ${metadata.isDeterministic ? "Deterministic" : "Non-deterministic"}.`,
           },
         ]);
         if (!metadata.isDeterministic) {
@@ -285,7 +292,7 @@ export default function ComposeTaskModal({
     setVerificationSummary(
       verificationMode === "deterministic"
         ? "Running deterministic verification flow..."
-        : "Running non-deterministic validation flow..."
+        : "Running reasoning verification flow..."
     );
     setVerificationAccepted(null);
     setExecutionCommitment("");
@@ -294,6 +301,7 @@ export default function ComposeTaskModal({
     setRecomputedOutput("");
     setExecutionId(null);
     setVerifierModel(verifierModelLabel);
+    setReasoningUiConfidencePct(null);
     setShowVerificationPanel(false);
   };
 
@@ -365,7 +373,16 @@ export default function ComposeTaskModal({
 
     try {
       updateStep("agent-run", "running");
-      const execution = await executeAgentTask(endpoint, prompt, agentId);
+      const execution = await executeAgentTask(endpoint, prompt, agentId, {
+        verificationLane: verificationMode === "non-deterministic" ? "reasoning" : "deterministic",
+      });
+      const resolvedVerificationMode: VerificationMode =
+        execution.verification?.verificationType === "reasoning" || execution.taskType === "reasoning"
+          ? "non-deterministic"
+          : "deterministic";
+      if (resolvedVerificationMode !== verificationMode) {
+        setVerificationMode(resolvedVerificationMode);
+      }
       const formattedExecution = formatExecution(prompt, execution);
       const firstNormalizedOutput = execution.normalizedOutput ?? normalizeExecutionResult(execution);
       const firstExecutionCommitment =
@@ -409,15 +426,43 @@ export default function ComposeTaskModal({
       setExecutionCommitment(firstExecutionCommitment);
 
       updateStep("submit", "running");
+      const reasoningMemoryPayload =
+        resolvedVerificationMode === "deterministic"
+          ? undefined
+          : await buildExecutionMemoryPayload({
+              agentId,
+              prompt,
+              execution,
+            });
+      const reasoningMemoryUpload = reasoningMemoryPayload
+        ? await uploadExecutionMemoryEnvelope(reasoningMemoryPayload)
+        : null;
+
+      if (resolvedVerificationMode !== "deterministic" && reasoningMemoryUpload) {
+        await persistExecutionMemoryRecord({
+          agentId,
+          prompt,
+          execution,
+          storageHash: reasoningMemoryUpload.storageHash,
+          storageTxSeq: reasoningMemoryUpload.storageTxSeq,
+          txHash: reasoningMemoryUpload.txHash || reasoningMemoryUpload.storageHash,
+          uploadMode: reasoningMemoryUpload.uploadMode,
+        });
+      }
+
       const reasoningHash =
-        verificationMode === "deterministic"
+        resolvedVerificationMode === "deterministic"
           ? undefined
           : computeReasoningHash(typeof execution.reasoning === "string" ? execution.reasoning : "");
       const submitted = await submitDeterministicExecutionHash({
         agentId,
         executionCommitment: firstExecutionCommitment,
         reasoningHash,
-        isDeterministic: verificationMode === "deterministic",
+        isDeterministic: resolvedVerificationMode === "deterministic",
+        memoryPayload: reasoningMemoryPayload,
+        storageHashOverride: reasoningMemoryUpload?.storageHash,
+        uploadModeOverride: reasoningMemoryUpload?.uploadMode,
+        storageTxSeqOverride: reasoningMemoryUpload?.storageTxSeq,
       });
       if (!submitted.executionId) {
         throw new Error("Execution ID was not returned from ValidationRegistry.");
@@ -427,12 +472,12 @@ export default function ComposeTaskModal({
       updateStep(
         "submit",
         "success",
-        verificationMode === "deterministic"
+        resolvedVerificationMode === "deterministic"
           ? `Execution #${submitted.executionId} anchored on-chain. Tx ${truncateHash(submitted.hash)}`
           : `Execution #${submitted.executionId} submitted with reasoning hash and execution commitment. Tx ${truncateHash(submitted.hash)}`
       );
 
-      if (verificationMode === "deterministic") {
+      if (resolvedVerificationMode === "deterministic") {
         updateStep("review", "running");
         const verificationPreview = await verifyWithBackend(endpoint, prompt, agentId);
         const recomputedNormalizedOutput = verificationPreview.output;
@@ -463,6 +508,30 @@ export default function ComposeTaskModal({
             ? "Deterministic verification accepted: submitted execution commitment matched the recomputed expected hash."
             : "Deterministic verification rejected: recomputed expected hash did not match the submitted execution commitment.",
         );
+        await persistExecutionMemoryRecord({
+          agentId,
+          prompt,
+          execution: {
+            ...execution,
+            verification: {
+              ...(execution.verification ?? {
+                verificationType: "deterministic",
+                verificationStatus: accepted ? "verified" : "rejected",
+                provenance: accepted ? "confirmed" : "observed",
+                confidence: accepted ? 0.98 : 0.2,
+                normalizedOutput: firstNormalizedOutput,
+                validatorResults: [],
+              }),
+              verificationStatus: accepted ? "verified" : "rejected",
+              provenance: accepted ? "confirmed" : "observed",
+            },
+          },
+          storageHash: submitted.storageHash,
+          storageTxSeq: submitted.storageTxSeq,
+          txHash: verification.hash,
+          uploadMode: "0g-validation-anchor",
+          executionId: submitted.executionId,
+        });
 
         setMessages((prev) => {
           const updated = [...prev];
@@ -478,140 +547,108 @@ export default function ComposeTaskModal({
           return updated;
         });
       } else {
-        updateStep("review", "running");
-        persistPendingValidatorExecution({
-          id: submitted.executionId,
+        persistNonDeterministicStatus({
           agentId,
-          agentName,
-          capability: capabilityName,
-          parentExecutionId: 0,
-          callerAgentId: 0,
-          involvesExternalCall: false,
-          externalService: "",
-          deterministic: false,
-          receivedAt: "Just now",
-          trustScore: "Pending",
-          riskLevel: "1",
-          task: prompt,
-          expectedReasoning: expectedReasoningTemplate || "Reasoning should explain how the result was produced.",
-          outputSchema: outputSchemaTemplate || '{ "result": "string" }',
-          reasoning: execution.reasoning || "No reasoning returned.",
-          output: formattedExecution,
+          executionId: submitted.executionId,
+          steps: verificationSteps,
+          summary: "Reasoning execution submitted. Waiting for validator-agent review anchoring.",
+          accepted: null,
+          messages,
         });
-        updateStep("review", "success", `Validator review card published for execution #${submitted.executionId}. Open Validators page to vote.`);
+        updateStep("review", "running");
+        const validatorResults = execution.verification?.validatorResults ?? [];
+        setReasoningUiConfidencePct(Math.round((execution.verification?.confidence ?? execution.confidence ?? 0) * 100));
+        const verificationStatus = execution.verification?.verificationStatus ?? "review_required";
+        const validatorDetail = validatorResults.length > 0
+          ? validatorResults
+              .map((result) => {
+                const concernText = result.concerns?.length ? ` [${result.concerns.join(", ")}]` : "";
+                const providerText = result.provider ? ` via ${result.provider}` : "";
+                return `${result.validator}: ${result.approved ? "approve" : "review"} (${Math.round(result.confidence * 100)}%)${concernText}${providerText}`;
+              })
+              .join(" | ")
+          : execution.confidence && execution.confidence > 0.9
+            ? `Confidence gate auto-approved at ${Math.round(execution.confidence * 100)}%.`
+            : "Validator ensemble returned no detailed votes.";
+        updateStep("review", verificationStatus === "rejected" ? "error" : "success", validatorDetail);
 
         updateStep("verify", "running");
-        const executionStatus = await fetchExecutionStatus(submitted.executionId);
-        if (executionStatus.finalized) {
-          setVerificationAccepted(executionStatus.accepted);
-          updateStep(
-            "verify",
-            executionStatus.accepted ? "success" : "error",
-            executionStatus.accepted
-              ? `Execution finalized and accepted after validator consensus.`
-              : `Execution finalized and rejected after validator consensus.`,
-          );
-          setVerificationSummary(
-            executionStatus.accepted
-              ? "Validator consensus finalized this non-deterministic execution as accepted."
-              : "Validator consensus finalized this non-deterministic execution as rejected.",
-          );
-          setMessages((prev) => {
-            const updated = [...prev];
-            for (let index = updated.length - 1; index >= 0; index -= 1) {
-              if (updated[index]?.from === "agent") {
-                updated[index] = {
-                  ...updated[index],
-                  verified: executionStatus.accepted,
-                };
-                break;
-              }
+        const anchored = await anchorReasoningExecution({
+          agentId,
+          prompt,
+          execution,
+          executionId: submitted.executionId,
+          storageHashOverride: submitted.storageHash,
+          uploadModeOverride: submitted.uploadMode,
+          storageTxSeqOverride: submitted.storageTxSeq ?? reasoningMemoryUpload?.storageTxSeq,
+          validationTxHash: submitted.hash,
+        });
+        const accepted = verificationStatus === "verified";
+        setVerificationAccepted(accepted ? true : verificationStatus === "rejected" ? false : null);
+        updateStep(
+          "verify",
+          accepted ? "success" : verificationStatus === "rejected" ? "error" : "success",
+          accepted
+            ? `Reasoning outcome anchored on-chain. Trust updated from ${anchored.trustBefore} to ${anchored.trustAfter}. Tx ${anchored.hash}`
+            : verificationStatus === "review_required"
+              ? `Minority veto triggered. Execution stored as observed memory and anchored with a negative trust adjustment. Tx ${anchored.hash}`
+              : `Reasoning execution rejected and anchored with a negative trust adjustment. Tx ${anchored.hash}`,
+        );
+        setVerificationSummary(
+          accepted
+            ? "Reasoning verification accepted: the validator ensemble approved the response and the memory record was anchored on 0G."
+            : verificationStatus === "review_required"
+              ? "Reasoning verification requires review: a validator flagged a strong issue, so the output was stored as observed memory."
+              : "Reasoning verification rejected: both validation confidence and ensemble checks fell below the reliability threshold.",
+        );
+        persistNonDeterministicStatus({
+          agentId,
+          executionId: submitted.executionId,
+          steps: verificationSteps.map((step) => {
+            if (step.key === "review") {
+              return {
+                ...step,
+                status: verificationStatus === "rejected" ? "error" : "success",
+                detail: validatorDetail,
+              };
             }
-            return updated;
-          });
-          persistNonDeterministicStatus({
-            agentId,
-            executionId: submitted.executionId,
-            steps: initialVerificationSteps("non-deterministic").map((step) => {
-              if (step.key === "review") {
-                return { ...step, status: "success", detail: `Validator review card published for execution #${submitted.executionId}. Open Validators page to vote.` };
-              }
-              if (step.key === "submit") {
-                return {
-                  ...step,
-                  status: "success",
-                  detail: `Execution #${submitted.executionId} submitted with reasoning hash and execution commitment. Tx ${truncateHash(submitted.hash)}`,
-                };
-              }
-              if (step.key === "binding-hash") {
-                return { ...step, status: "success", detail: `Execution commitment generated: ${truncateHash(firstExecutionCommitment)}` };
-              }
-              if (step.key === "agent-run") {
-                return { ...step, status: "success", detail: `Agent output captured: ${truncateValue(formattedExecution, 92)}` };
-              }
-              if (step.key === "verify") {
-                return {
-                  ...step,
-                  status: executionStatus.accepted ? "success" : "error",
-                  detail: executionStatus.accepted
-                    ? "Execution finalized and accepted after validator consensus."
-                    : "Execution finalized and rejected after validator consensus.",
-                };
-              }
-              return step;
-            }),
-            summary: executionStatus.accepted
-              ? "Validator consensus finalized this non-deterministic execution as accepted."
-              : "Validator consensus finalized this non-deterministic execution as rejected.",
-            accepted: executionStatus.accepted,
-            messages: [
-              { from: "user", text: prompt },
-              { from: "agent", text: formattedExecution, verified: executionStatus.accepted },
-            ],
-          });
-        } else {
-          setVerificationAccepted(null);
-          const waitingDetail =
-            `Waiting for validator votes. Current votes: ${executionStatus.approvals + executionStatus.rejections}. Finalization will happen once the minimum vote threshold is reached.`;
-          updateStep(
-            "verify",
-            "running",
-            waitingDetail,
-          );
-          setVerificationSummary("Non-deterministic execution submitted. Open Validators page to cast votes and finalize this execution.");
-          persistNonDeterministicStatus({
-            agentId,
-            executionId: submitted.executionId,
-            steps: initialVerificationSteps("non-deterministic").map((step) => {
-              if (step.key === "review") {
-                return { ...step, status: "success", detail: `Validator review card published for execution #${submitted.executionId}. Open Validators page to vote.` };
-              }
-              if (step.key === "submit") {
-                return {
-                  ...step,
-                  status: "success",
-                  detail: `Execution #${submitted.executionId} submitted with reasoning hash and execution commitment. Tx ${truncateHash(submitted.hash)}`,
-                };
-              }
-              if (step.key === "binding-hash") {
-                return { ...step, status: "success", detail: `Execution commitment generated: ${truncateHash(firstExecutionCommitment)}` };
-              }
-              if (step.key === "agent-run") {
-                return { ...step, status: "success", detail: `Agent output captured: ${truncateValue(formattedExecution, 92)}` };
-              }
-              if (step.key === "verify") {
-                return { ...step, status: "running", detail: waitingDetail };
-              }
-              return step;
-            }),
-            summary: "Non-deterministic execution submitted. Open Validators page to cast votes and finalize this execution.",
-            accepted: null,
-            messages: [
-              { from: "user", text: prompt },
-              { from: "agent", text: formattedExecution, verified: false },
-            ],
-          });
-        }
+
+            if (step.key === "verify") {
+              return {
+                ...step,
+                status: accepted ? "success" : verificationStatus === "rejected" ? "error" : "success",
+                detail: accepted
+                  ? `Reasoning outcome anchored on-chain. Trust updated from ${anchored.trustBefore} to ${anchored.trustAfter}. Tx ${anchored.hash}`
+                  : verificationStatus === "review_required"
+                    ? `Minority veto triggered. Execution stored as observed memory and anchored with a negative trust adjustment. Tx ${anchored.hash}`
+                    : `Reasoning execution rejected and anchored with a negative trust adjustment. Tx ${anchored.hash}`,
+              };
+            }
+
+            return step;
+          }),
+          summary:
+            accepted
+              ? "Reasoning verification accepted: the validator ensemble approved the response and the memory record was anchored on 0G."
+              : verificationStatus === "review_required"
+                ? "Reasoning verification requires review: a validator flagged a strong issue, so the output was stored as observed memory."
+                : "Reasoning verification rejected: both validation confidence and ensemble checks fell below the reliability threshold.",
+          accepted: accepted ? true : verificationStatus === "rejected" ? false : null,
+          messages,
+        });
+        setMessages((prev) => {
+          const updated = [...prev];
+          for (let index = updated.length - 1; index >= 0; index -= 1) {
+            if (updated[index]?.from === "agent") {
+              updated[index] = {
+                ...updated[index],
+                verified: accepted,
+              };
+              break;
+            }
+          }
+          return updated;
+        });
       }
     } catch (error) {
       const message = formatDisplayError(error);
@@ -817,7 +854,11 @@ export default function ComposeTaskModal({
             }}
           >
             <div className="flex items-center justify-between gap-3">
-              <h3 className="text-sm font-semibold text-white">Execution Verification Pipeline (Deterministic)</h3>
+              <h3 className="text-sm font-semibold text-white">
+                {verificationMode === "deterministic"
+                  ? "Execution Verification Pipeline (Deterministic)"
+                  : "Execution Verification Pipeline (Reasoning)"}
+              </h3>
               <span className="rounded-full border px-2.5 py-1 text-[10px] font-semibold" style={badgeStyle(verificationAccepted)}>
                 {verificationAccepted === null ? "Pending" : verificationAccepted ? "Accepted" : "Rejected"}
               </span>
@@ -869,7 +910,7 @@ export default function ComposeTaskModal({
             </div>
 
             <div
-              className="mt-4 rounded-[18px] border p-4"
+              className="mt-4 overflow-hidden rounded-[18px] border p-4"
               style={{
                 borderColor: activeCardBorder(activeVerificationStep?.status ?? "idle"),
                 background: activeCardBackground(activeVerificationStep?.status ?? "idle"),
@@ -879,17 +920,64 @@ export default function ComposeTaskModal({
                     : "inset 0 1px 0 rgba(255,255,255,0.04)",
               }}
             >
-              <div className="flex flex-col gap-2 text-sm text-slate-300">
-                <span className="font-semibold text-white">{activeVerificationStep?.label ?? "Verification pipeline"}</span>
-                <span className="text-slate-400">{liveStepDetail.main}</span>
-                {liveStepDetail.hash && (
-                  <div className="flex flex-col gap-1">
-                    <span className="text-slate-400">Tx</span>
-                    <span className="font-mono text-xs break-all text-cyan-300">{liveStepDetail.hash}</span>
+              <div className="flex min-w-0 flex-col gap-2 text-sm text-slate-300 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+                <p className="min-w-0 flex-1 leading-snug">
+                  <span className="font-semibold text-white whitespace-nowrap">
+                    {activeVerificationStep?.label ?? "Verification pipeline"}
+                  </span>
+                  {liveStepDetail.main ? (
+                    <>
+                      <span className="text-slate-500"> · </span>
+                      <span className="text-slate-400 break-words">{liveStepDetail.main}</span>
+                    </>
+                  ) : null}
+                </p>
+                {liveStepDetail.hash ? (
+                  <div className="flex min-w-0 max-w-full shrink-0 items-center gap-2 sm:max-w-[min(46%,17rem)]">
+                    <span className="shrink-0 text-slate-400">Tx</span>
+                    <span
+                      className="min-w-0 truncate font-mono text-xs text-cyan-300"
+                      title={liveStepDetail.hash}
+                    >
+                      {formatTxHashDisplay(liveStepDetail.hash)}
+                    </span>
+                    <button
+                      type="button"
+                      className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-white/10 text-slate-400 transition-colors hover:border-white/20 hover:bg-white/5 hover:text-slate-200"
+                      aria-label="Copy transaction hash"
+                      onClick={() => {
+                        void navigator.clipboard
+                          .writeText(liveStepDetail.hash)
+                          .then(() => {
+                            toast({ title: "Copied", description: "Transaction hash copied to clipboard." });
+                          })
+                          .catch(() => {
+                            toast({
+                              title: "Copy failed",
+                              description: "Clipboard permission was denied or unavailable.",
+                              variant: "destructive",
+                            });
+                          });
+                      }}
+                    >
+                      <span className="material-symbols-outlined text-[16px]">content_copy</span>
+                    </button>
                   </div>
-                )}
+                ) : null}
               </div>
             </div>
+
+            {verificationMode === "non-deterministic" && reasoningUiConfidencePct != null ? (
+              <p className="mt-3 text-xs text-slate-400 leading-snug">
+                <span className="font-medium text-slate-300">Ensemble confidence: {reasoningUiConfidencePct}%.</span>{" "}
+                OpenClaw orchestration and validator votes are on the{" "}
+                <Link to="/validators" className="font-semibold text-sky-400 hover:underline">
+                  Validators page
+                </Link>
+                .
+              </p>
+            ) : null}
+
           </section>
         )}
 
@@ -1076,9 +1164,65 @@ export default function ComposeTaskModal({
   );
 }
 
+function isBoilerplateReasoningSurface(text: string): boolean {
+  return /structured response ready for provenance/i.test(text) || /provenance-tagged memory/i.test(text);
+}
+
+function formatReasoningOutputSurface(result: unknown, summary?: string | null | undefined): string {
+  if (result === undefined || result === null) {
+    return summary?.trim() || "No result returned";
+  }
+  if (typeof result === "string" || typeof result === "number" || typeof result === "boolean") {
+    return String(result);
+  }
+  if (Array.isArray(result)) {
+    return JSON.stringify(result);
+  }
+  if (typeof result === "object") {
+    const o = result as Record<string, unknown>;
+    for (const key of ["answer", "output", "result", "response", "text", "content"]) {
+      const v = o[key];
+      if (typeof v === "string" && v.trim() && !isBoilerplateReasoningSurface(v)) {
+        return v.trim();
+      }
+    }
+    const nested = o.output;
+    if (nested && typeof nested === "object") {
+      const t = (nested as Record<string, unknown>).text;
+      if (typeof t === "string" && t.trim()) {
+        return t.trim();
+      }
+    }
+    if (summary?.trim() && !isBoilerplateReasoningSurface(summary)) {
+      return summary.trim();
+    }
+    const sanitized: Record<string, unknown> = { ...o };
+    if (typeof sanitized.response === "string" && isBoilerplateReasoningSurface(sanitized.response)) {
+      delete sanitized.response;
+    }
+    const keys = Object.keys(sanitized).filter((k) => sanitized[k] != null && sanitized[k] !== "");
+    if (keys.length > 0) {
+      return JSON.stringify(sanitized, null, 2);
+    }
+  }
+  if (summary?.trim()) {
+    return summary.trim();
+  }
+  return typeof result === "object" ? JSON.stringify(result) : String(result);
+}
+
 function formatExecution(_prompt: string, execution: AgentExecutionResponse) {
-  const resultText = typeof execution.result === "string" ? execution.result : JSON.stringify(execution.result, null, 2);
-  return resultText || "No result returned";
+  const isReasoning =
+    execution.taskType === "reasoning" ||
+    execution.verification?.verificationType === "reasoning" ||
+    execution.verificationType === "reasoning";
+  if (isReasoning) {
+    return formatReasoningOutputSurface(execution.result, execution.summary);
+  }
+  if (typeof execution.result === "string") {
+    return execution.result;
+  }
+  return JSON.stringify(execution.result, null, 2) || "No result returned";
 }
 
 function normalizeExecutionResult(execution: AgentExecutionResponse) {
@@ -1263,18 +1407,54 @@ function activeCardBackground(status: VerificationStepStatus) {
   return "rgba(255,255,255,0.02)";
 }
 
-function splitTxDetail(detail: string) {
-  const hashMatch = detail.match(/(0x[a-fA-F0-9.]+)/);
-  const hash = hashMatch?.[1] ?? "";
+function stripTxPrefixFromDetail(text: string) {
+  return text.replace(/\s*[.:]?\s*Tx\s*$/i, "").replace(/\s+/g, " ").trim();
+}
 
-  if (!hash) {
-    return { main: detail, hash: "" };
+function splitTxDetail(detail: string) {
+  const normalized = detail?.trim() ?? "";
+  if (!normalized) {
+    return { main: "", hash: "" };
   }
 
-  return {
-    main: detail.replace(hash, "").trim(),
-    hash,
-  };
+  const fullMatch = normalized.match(/\b(0x[a-fA-F0-9]{64})\b/);
+  if (fullMatch) {
+    const hash = fullMatch[1];
+    const main = stripTxPrefixFromDetail(normalized.replace(fullMatch[0], ""));
+    return { main, hash };
+  }
+
+  const truncatedMatch = normalized.match(/\b(0x[a-fA-F0-9]{6,})(?:\.{2,3}|…)([a-fA-F0-9]{4,})\b/);
+  if (truncatedMatch) {
+    const hash = `${truncatedMatch[1]}…${truncatedMatch[2]}`;
+    const main = stripTxPrefixFromDetail(normalized.replace(truncatedMatch[0], ""));
+    return { main, hash };
+  }
+
+  const looseMatch = normalized.match(/\b(0x[a-fA-F0-9][a-fA-F0-9.]{8,})\b/);
+  if (!looseMatch) {
+    return { main: normalized, hash: "" };
+  }
+
+  const hash = looseMatch[1];
+  const main = stripTxPrefixFromDetail(normalized.replace(looseMatch[0], ""));
+  return { main, hash };
+}
+
+function formatTxHashDisplay(hash: string) {
+  if (!hash) {
+    return "";
+  }
+
+  if (hash.length === 66) {
+    return `${hash.slice(0, 10)}…${hash.slice(-8)}`;
+  }
+
+  if (/^0x[a-fA-F0-9]+(?:\.{2,3}|…)[a-fA-F0-9]+$/i.test(hash)) {
+    return hash.replace(/\.\.\./g, "…");
+  }
+
+  return hash.length > 24 ? `${hash.slice(0, 12)}…${hash.slice(-8)}` : hash;
 }
 
 function delay(ms: number) {

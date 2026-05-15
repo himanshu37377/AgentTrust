@@ -16,5 +16,11 @@ docs/
 # Local machine files
 .DS_Store
 
+# Local OpenClaw workspace state
+.openclaw/
+
+# Local frontend runtime artifacts
+agentrust-main/data/*.json
+
 # Local relayer config with operator credentials
 hcs-relayer/src/config.json

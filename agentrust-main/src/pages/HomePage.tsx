@@ -28,14 +28,14 @@ export default function HomePage() {
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-trust-accent-blue opacity-75" />
                 <span className="relative inline-flex rounded-full h-2 w-2 bg-trust-accent-blue" />
               </span>
-              <span className="text-trust-accent-blue text-[10px] font-black uppercase tracking-[0.2em]">Decentralized Trust Protocol</span>
+              <span className="text-trust-accent-blue text-[10px] font-black uppercase tracking-[0.2em]">0G-Native Agent Infrastructure</span>
             </div>
             <h1 className="max-w-4xl text-6xl md:text-8xl font-black text-white leading-[1.1] tracking-tight">
               Trust Infrastructure for <br />
               <span className="text-transparent bg-clip-text bg-gradient-to-r from-trust-accent-blue via-[#00ffd5] to-trust-accent-purple">AI Agents</span>
             </h1>
             <p className="text-xl md:text-2xl font-medium text-slate-400 max-w-3xl leading-relaxed mt-4">
-            A decentralized verification network for the autonomous economy. Validating agent behavior through staking, validator consensus, and execution proofs.
+            A hybrid verification and persistent memory network for the autonomous economy. AgentTrust persists long-context history on 0G while routing each task through deterministic or reasoning-aware trust checks backed by validator collateral.
 
             </p>
             <div className="flex flex-wrap items-center justify-center gap-6 mt-6">
@@ -70,7 +70,7 @@ export default function HomePage() {
                   <span className="material-symbols-outlined text-trust-accent-purple text-3xl shrink-0">warning</span>
                   <div className="space-y-2">
                     <div className="text-trust-accent-purple text-xs font-black uppercase tracking-[0.3em]">Trust gap</div>
-                    <p className="text-white font-semibold text-[22px] leading-tight">But there is no decentralized system to verify agent behavior and ensure they can be trusted.</p>
+                    <p className="text-white font-semibold text-[22px] leading-tight">But there is still no decentralized system that gives AI agents persistent memory, verifiable behavior, and durable trust.</p>
                   </div>
                 </div>
               </div>
@@ -165,7 +165,7 @@ export default function HomePage() {
           </div>
           <div className="mt-20 text-center relative z-10 text-xl">
             <p className="font-medium tracking-wide max-w-2xl mx-auto px-6 text-slate-300 text-lg">
-              AI agents operate as black boxes. AgentTrust introduces a decentralized verification layer bringing transparency,accountability and trust to the autonomous economy.
+              AI agents still operate like black boxes. AgentTrust introduces a decentralized 0G memory and verification layer that brings transparency, accountability, and trust to the autonomous economy.
             </p>
           </div>
         </div>
@@ -180,15 +180,15 @@ export default function HomePage() {
               Verifying AI <span className="text-transparent bg-clip-text bg-gradient-to-r from-trust-accent-blue via-[#00ffd5] to-trust-accent-purple drop-shadow-[0_0_20px_rgba(0,242,255,0.3)]">Agent Behavior</span>
             </h2>
             <p className="text-[20px] md:text-[22px] leading-[1.6] text-slate-100/95 max-w-[680px] mb-[64px]">
-              Our decentralized infrastructure ensures AI agent executions are validated by a global network of validators through decentralized consensus in near real-time.
+              Our decentralized infrastructure ensures AI agent executions are stored as persistent memory on 0G and validated by a distributed trust layer in near real-time.
             </p>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-4 gap-[32px] relative">
             <div className="hidden md:block absolute top-[136px] left-[15%] right-[15%] h-[1.5px] step-connection-line z-0" />
-            {[{ num: "01", icon: "play_circle", title: "Execution", desc: "Agent executes the task, generates an execution trace and proof, and submits it to the network for validator verification.", gradient: "bg-blue-gradient" },
-            { num: "02", icon: "group", title: "Validators", desc: "Independent validators review agent execution traces to verify task behavior and ensure alignment with protocols.", gradient: "bg-purple-gradient" },
-            { num: "03", icon: "handshake", title: "Consensus", desc: "Validators vote on execution validity, and the majority decision determines the outcome across the network nodes.", gradient: "bg-teal-gradient" },
-            { num: "04", icon: "verified_user", title: "Trust Score", desc: "Agent reputation updated and trust scores broadcast to the global ecosystem for secure interaction.", gradient: "bg-blue-gradient" }].
+            {[{ num: "01", icon: "play_circle", title: "Execution", desc: "An autonomous AI agent completes a task and generates structured execution metadata.", gradient: "bg-blue-gradient" },
+            { num: "02", icon: "memory", title: "0G Memory", desc: "The execution record is uploaded to 0G Storage as persistent decentralized memory.", gradient: "bg-purple-gradient" },
+            { num: "03", icon: "handshake", title: "Verification", desc: "Deterministic recomputation or validator-ensemble review confirms whether the interaction should strengthen trust.", gradient: "bg-teal-gradient" },
+            { num: "04", icon: "verified_user", title: "Trust Score", desc: "The on-chain trust layer updates agent reputation and preserves a durable behavioral history.", gradient: "bg-blue-gradient" }].
               map((step) =>
                 <div key={step.num} className="behavior-step-card group relative flex flex-col p-[40px] rounded-[20px] glass-card border-white/10 shadow-[0_20px_50px_rgba(0,0,0,0.45)] z-10" style={{ background: "linear-gradient(180deg, rgba(20,35,60,0.95), rgba(12,22,40,0.95))" }}>
                   <div className="absolute -top-[22px] -right-[22px] size-[44px] bg-background-dark border border-trust-accent-blue/40 rounded-full flex items-center justify-center text-trust-accent-blue font-bold text-[16px] z-20 shadow-[0_0_15px_rgba(43,140,238,0.4)]">{step.num}</div>
@@ -203,140 +203,9 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* Featured Agent */}
       <section className="py-32 px-6 md:px-20 relative">
         <div className="absolute inset-0 bg-neural-grid opacity-[0.04] pointer-events-none" />
         <div className="max-w-[1200px] mx-auto space-y-[100px]">
-          <div className="w-full">
-            <h2 className="text-[36px] md:text-[40px] font-[900] text-white mb-10 flex items-center gap-4">
-              <span className="material-symbols-outlined text-trust-accent-blue text-4xl">verified</span> Featured Agent
-            </h2>
-            <div
-              className="p-[40px] rounded-[18px] backdrop-blur-[12px] relative overflow-hidden group transition-all duration-300 hover:-translate-y-[3px] cursor-default"
-              style={{
-                background: "linear-gradient(180deg, rgba(18,24,46,0.95), rgba(12,18,35,0.95))",
-                border: "1px solid rgba(120,140,255,0.18)",
-                boxShadow: "0 0 0 1px rgba(120,140,255,0.08), 0 22px 70px rgba(0,0,0,0.6), 0 0 28px rgba(90,110,255,0.25)",
-              }}
-            >
-              <div className="absolute -top-40 -right-40 size-96 opacity-[0.07] blur-[120px] bg-trust-accent-blue pointer-events-none" />
-              <div className="flex flex-col lg:flex-row gap-12 relative z-10">
-                {/* Left Side */}
-                <div className="flex-1 space-y-8">
-                  <div className="flex items-start justify-between">
-                    <div className="flex items-center gap-5">
-                      <div
-                        className="size-16 rounded-[14px] flex items-center justify-center flex-shrink-0"
-                        style={{
-                          background: "radial-gradient(circle at center, rgba(20,30,60,0.9), rgba(8,12,22,0.9))",
-                          border: "1px solid rgba(120,140,255,0.25)",
-                          boxShadow: "0 0 16px rgba(120,140,255,0.35), 0 0 28px rgba(90,110,255,0.25)",
-                        }}
-                      >
-                        <span className="material-symbols-outlined text-3xl text-white">functions</span>
-                      </div>
-                      <div>
-                        <h3 className="text-[24px] font-semibold text-white leading-tight">MathAgent <span className="text-slate-500 font-medium text-base ml-1">v4.2</span></h3>
-                        <p className="text-[13px] font-mono" style={{ color: "rgba(150,170,210,0.75)" }}>AgentID: #001</p>
-                        <div className="flex items-center gap-2 mt-1.5">
-                          <div className="flex text-yellow-500">
-                            {[1, 2, 3, 4].map((i) => <span key={i} className="material-symbols-outlined text-[18px] fill-1">star</span>)}
-                            <span className="material-symbols-outlined text-[18px]">star_half</span>
-                          </div>
-                          <span className="text-xs font-medium" style={{ color: "rgba(180,200,230,0.8)" }}>4.8 / 5.0</span>
-                        </div>
-                      </div>
-                    </div>
-                    <span className="px-3 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider border" style={{ background: "rgba(34,197,94,0.15)", color: "#4ade80", borderColor: "rgba(34,197,94,0.35)" }}>Low Risk</span>
-                  </div>
-
-                  {/* Unified Stats Row */}
-                  <div className="flex gap-10 mt-4">
-                    <div>
-                      <span className="text-[14px] block mb-1" style={{ color: "rgba(180,200,230,0.8)" }}>Trust Score</span>
-                      <span className="text-[20px] font-semibold text-white">98 / 100</span>
-                    </div>
-                    <div>
-                      <span className="text-[14px] block mb-1" style={{ color: "rgba(180,200,230,0.8)" }}>Risk Level</span>
-                      <span className="text-[20px] font-semibold text-white">Minimal</span>
-                    </div>
-                    <div>
-                      <span className="text-[14px] block mb-1" style={{ color: "rgba(180,200,230,0.8)" }}>Rating</span>
-                      <div className="flex items-center gap-1">
-                        <div className="flex text-yellow-500">
-                          {[1, 2, 3, 4].map((i) => <span key={i} className="material-symbols-outlined text-[16px] fill-1">star</span>)}
-                          <span className="material-symbols-outlined text-[16px]">star_outline</span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Capability Tags */}
-                  <div className="flex flex-wrap gap-2 mt-2">
-                    {["DeFi Trading", "Arbitrage", "Mathematical Reasoning"].map((tag) => (
-                      <span
-                        key={tag}
-                        className="px-3 py-1.5 rounded-full text-xs font-medium"
-                        style={{
-                          background: "rgba(120,140,255,0.12)",
-                          border: "1px solid rgba(120,140,255,0.25)",
-                          color: "rgba(200,210,240,0.9)",
-                        }}
-                      >
-                        {tag}
-                      </span>
-                    ))}
-                    <span className="px-3 py-1 bg-trust-accent-blue/10 border border-trust-accent-blue/10 rounded-lg text-xs font-medium text-trust-accent-blue flex items-center gap-1">
-                      <span className="material-symbols-outlined text-[14px]">verified</span>
-                      Consensus Verified
-                    </span>
-                  </div>
-                </div>
-
-                {/* Right Side */}
-                <div className="flex-1 flex flex-col justify-between space-y-8">
-                  <div className="space-y-6">
-                    <div>
-                      <label className="text-slate-400 uppercase tracking-[1.5px] font-bold text-[12px] mb-2 block">Agent Description</label>
-                      <p className="text-[14px] leading-[1.6]" style={{ color: "rgba(190,210,240,0.85)", maxWidth: 520 }}>Performs deterministic mathematical tasks with high precision and reliability across complex computational domains.</p>
-                    </div>
-                    <div>
-                      <label className="text-slate-400 uppercase tracking-[1.5px] font-bold text-[12px] mb-2 block">Agent Capability</label>
-                      <p className="text-[14px] leading-[1.6]" style={{ color: "rgba(190,210,240,0.85)", maxWidth: 520 }}>High-level mathematical reasoning, symbolic logic, and complex architectural computations.</p>
-                    </div>
-                  </div>
-                  <a
-                    href="#"
-                    className="inline-flex items-center gap-2 self-start mt-5 transition-all duration-300 group/link"
-                    style={{
-                      background: "linear-gradient(180deg, rgba(60,80,160,0.25), rgba(40,60,140,0.18))",
-                      backgroundImage: "linear-gradient(90deg, #4f8cff, #7a6cff)",
-                      backgroundBlendMode: "overlay",
-                      border: "1px solid rgba(120,140,255,0.28)",
-                      borderRadius: 12,
-                      padding: "12px 22px",
-                      height: 42,
-                      boxShadow: "0 0 10px rgba(120,140,255,0.28), 0 0 18px rgba(120,140,255,0.18)",
-                      fontSize: 14,
-                      fontWeight: 500,
-                      letterSpacing: "0.2px",
-                      color: "#e6ecff",
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.transform = "translateY(-1px)";
-                      e.currentTarget.style.boxShadow = "0 6px 20px rgba(120,140,255,0.35), 0 0 24px rgba(120,140,255,0.35)";
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.transform = "translateY(0)";
-                      e.currentTarget.style.boxShadow = "0 0 10px rgba(120,140,255,0.28), 0 0 18px rgba(120,140,255,0.18)";
-                    }}
-                  >
-                    View Audit Log <span className="material-symbols-outlined text-lg opacity-85 group-hover/link:opacity-100 group-hover/link:translate-x-0.5 transition-all">arrow_outward</span>
-                  </a>
-                </div>
-              </div>
-            </div>
-          </div>
           {/* System Architecture */}
           <div className="w-full relative z-10">
             <div className="mb-14">
@@ -360,10 +229,10 @@ export default function HomePage() {
                   </div>
                 </div>
                 {[
-                  { icon: "app_registration", title: "Agent Registry", desc: "Decentralized registry storing AI agent identities, ownership, capabilities, risk levels, and staking parameters.", gradient: "bg-blue-gradient" },
-                  { icon: "security", title: "Validation Registry", desc: "Verification layer that records agent execution proofs and coordinates validator voting to determine the validity of agent behavior.", gradient: "bg-purple-gradient" },
-                  { icon: "how_to_vote", title: "Staking Layer", desc: "Economic security mechanism where agents stake assets based on risk level, enabling slashing and validator rewards for detecting misbehavior.", gradient: "bg-teal-gradient" },
-                  { icon: "star", title: "Reputation Registry", desc: "Reputation system that updates agent trust scores based on validator consensus, historical validation results, and user ratings.", gradient: "bg-cyan-gradient" }].
+                  { icon: "app_registration", title: "Agent Registry", desc: "0G chain registry storing AI agent identities, metadata roots, capabilities, and trust-aware execution settings.", gradient: "bg-blue-gradient" },
+                  { icon: "security", title: "Validation Layer", desc: "Hybrid verification layer coordinating deterministic recomputation, validator-ensemble review, objective slashing paths, and trust-state anchoring.", gradient: "bg-purple-gradient" },
+                  { icon: "how_to_vote", title: "0G Storage Memory", desc: "Persistent decentralized memory layer for execution logs, behavioral history, and trust evidence.", gradient: "bg-teal-gradient" },
+                  { icon: "star", title: "Reputation Registry", desc: "Trust layer that updates agent scores based on validated outcomes and long-term behavioral history.", gradient: "bg-cyan-gradient" }].
                   map((card) =>
                     <div key={card.title} className="architecture-card p-[36px] md:p-[40px] rounded-[24px] group">
                       <div className={`icon-container ${card.gradient} text-white mb-8 group-hover:scale-110 transition-transform`}>
@@ -379,7 +248,7 @@ export default function HomePage() {
                 <div className="flex gap-8 relative z-10">
                   <span className="material-symbols-outlined text-trust-accent-purple text-6xl opacity-40 shrink-0">format_quote</span>
                   <p className="text-slate-100 text-[20px] md:text-[22px] leading-[1.6] font-medium font-mono">
-                    AgentTrust bridges the gap between AI capability and AI reliability through decentralized consensus and verifiable accountability.
+                    AgentTrust bridges the gap between AI capability and AI reliability through persistent 0G memory, verifiable interactions, and accountable trust updates.
 
 
 

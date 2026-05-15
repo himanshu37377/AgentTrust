@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { Client, TopicMessageSubmitTransaction } from "@hashgraph/sdk";
+import { Client, PrivateKey, TopicMessageSubmitTransaction } from "@hashgraph/sdk";
 import { Contract, JsonRpcProvider } from "ethers";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -26,7 +26,9 @@ const agentRegistryAbi = [
   "event AgentRevoked(uint256 indexed agentId)"
 ];
 
-const provider = new JsonRpcProvider(config.evm.rpcUrl);
+const provider = new JsonRpcProvider(config.evm.rpcUrl, undefined, {
+  batchMaxCount: 1
+});
 const validationRegistry = new Contract(
   config.evm.validationRegistryAddress,
   validationRegistryAbi,
@@ -36,9 +38,20 @@ const agentRegistry = new Contract(config.evm.agentRegistryAddress, agentRegistr
 
 const hederaClient =
   config.hedera.network === "mainnet" ? Client.forMainnet() : Client.forTestnet();
-hederaClient.setOperator(config.hedera.operatorId, config.hedera.operatorKey);
+const operatorKey = parsePrivateKey(config.hedera.operatorKey);
+const topicSubmitKey = parsePrivateKey(process.env.HEDERA_TOPIC_SUBMIT_KEY);
+hederaClient.setOperator(config.hedera.operatorId, operatorKey);
 
 const seen = new Set();
+
+function parsePrivateKey(value) {
+  const raw = value?.trim();
+  if (!raw) {
+    return null;
+  }
+
+  return PrivateKey.fromStringECDSA(raw);
+}
 
 function basePayload(evt, type, contractAddress) {
   return {
@@ -56,10 +69,16 @@ async function publishToHCS(payload) {
   const dedupeKey = `${payload.txHash}:${payload.logIndex}`;
   if (seen.has(dedupeKey)) return;
 
-  await new TopicMessageSubmitTransaction()
+  let tx = new TopicMessageSubmitTransaction()
     .setTopicId(config.hedera.topicId)
-    .setMessage(JSON.stringify(payload))
-    .execute(hederaClient);
+    .setMessage(JSON.stringify(payload));
+
+  let frozen = await tx.freezeWith(hederaClient);
+  if (topicSubmitKey && topicSubmitKey.toStringRaw() !== operatorKey.toStringRaw()) {
+    frozen = await frozen.sign(topicSubmitKey);
+  }
+
+  await frozen.execute(hederaClient);
 
   seen.add(dedupeKey);
   console.log(`[HCS] ${payload.type} -> ${dedupeKey}`);

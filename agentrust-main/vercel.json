@@ -1,0 +1,23 @@
+{
+  "routes": [
+    {
+      "src": "/agent/execute",
+      "dest": "/api/agent/execute"
+    },
+    {
+      "src": "/metadata/upload",
+      "dest": "/api/metadata/upload"
+    },
+    {
+      "src": "/upload-metadata",
+      "dest": "/api/metadata/upload"
+    },
+    {
+      "handle": "filesystem"
+    },
+    {
+      "src": "/.*",
+      "dest": "/index.html"
+    }
+  ]
+}

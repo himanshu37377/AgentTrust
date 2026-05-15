@@ -2,271 +2,333 @@
   <img src="agentrust-main/public/agentrust-logo.svg" alt="AgentTrust Logo" width="120" />
 </p>
 
-# 🚀 AgentTrust
+# AgentTrust
 
-### Track: Open Track
+AgentTrust is a 0G-native hybrid verification, persistent memory, and trust infrastructure for autonomous AI agents using OpenClaw orchestration, 0G Compute validator agents, 0G Storage memory, and 0G Chain settlement.
 
----
+## One-Sentence Description
 
-## 🧠 Overview
+AgentTrust gives autonomous AI agents persistent decentralized memory, validator-reviewed reasoning, and an on-chain trust layer so users can inspect long-term behavioral history instead of trusting opaque one-off outputs.
 
-**AgentTrust is the first decentralized platform that registers agents, verifies their execution, and enforces proper AI agent behavior on Hedera.**
+## Hackathon Track
 
-Today, most agent systems focus on **discovery (registries)** or **reputation (ratings)**. AgentTrust goes further by introducing a **verification + enforcement layer** where every agent action can be checked, validated, and economically enforced.
+- Track 1: Agentic Infrastructure & OpenClaw Lab
 
-It provides a complete lifecycle:
+## Problem
 
-- 🆔 **Register agents** with on-chain metadata, capabilities, and risk profile
-- ⚙️ **Execute tasks** through a structured compose flow
-- 🧪 **Verify execution**:
-  - deterministic → commitment-based verification
-  - non-deterministic → validator consensus
-- 📊 **Update trust score** based on outcomes (**+1 success / -5 failure**)
-- 💰 **Enforce behavior** via staking & slashing (malicious actions lose stake)
-- 🔐 **Control access** through capability-based authorization
-- 📡 **Audit everything** via protocol logs and optional HCS-ordered events
+Autonomous AI agents are becoming execution surfaces for analysis, planning, and task completion, but most agents still behave like disposable chat sessions:
 
-Unlike existing registries (only ~2–3 today) that mainly help you **find agents**, AgentTrust ensures you can **trust how they behave**.
+- no persistent decentralized memory
+- no verifiable execution history
+- no reusable trust layer
+- no visible validator review for non-deterministic outputs
+- no durable reputation that compounds over time
 
+This makes it hard for users, integrators, and future agent marketplaces to answer a basic question:
 
-**Core idea:**
+Can this agent be trusted based on what it has actually done before?
 
-> Trust is not claimed — it is **verified, scored, and enforced**.
+## What AgentTrust Does
 
----
+AgentTrust turns each agent action into a verifiable infrastructure flow:
 
-## ❗ The Challenge — Trust Gap in AI Agents
+1. An agent executes a task.
+2. OpenClaw routes the task into deterministic or non-deterministic verification.
+3. Deterministic tasks use canonical recomputation.
+4. Non-deterministic tasks use isolated validator agents running through 0G Compute.
+5. The execution envelope, validator results, and provenance data are stored in 0G Storage.
+6. The storage root and trust updates are anchored on 0G Chain.
+7. The frontend exposes trust score, memory logs, validator-agent activity, and issue escalation flows.
 
-AI agents are rapidly evolving into autonomous systems that can handle **sensitive data, financial assets, and critical decision-making across the web**.
+## Why It Matters
 
-Today’s systems suffer from:
+AgentTrust is not just another AI app with a storage plugin. It is infrastructure for:
 
-- ❌ No decentralized verification of execution
-- ❌ Opaque behavior (no proof of how outputs were generated)
-- ❌ No guarantee that agents act within user permissions
-- ❌ Weak accountability and no real consequences for malicious actions
+- autonomous AI agents
+- persistent decentralized memory
+- verifiable trust
+- agent reputation
+- long-context behavioral history
+- validator-reviewed reasoning
 
-However, there is still no reliable infrastructure or system that allows users to truly trust the agent they assign important tasks to, verify what an agent actually did, or enforce correct behavior in a decentralized way.
+## 0G Technical Integration Proof
 
-👉 From a user’s perspective, the real concerns are:
+This project uses three core 0G modules directly.
 
-- Did the agent perform only the actions I authorized?
-- Can I verify that the task is performed correctly?
-- Is there a clear audit trail of what actually happened?
-- What happens if the agent behaves maliciously?
-- Can the system penalize bad behavior in a meaningful way?
+### 1. 0G Storage
 
+Used for:
 
-This gap between **agent capability and user trust** is what AgentTrust is designed to solve.
+- wallet-bound agent metadata
+- execution envelopes
+- validator-agent review payloads
+- provenance-tagged memory
+- trust-related execution history
 
----
+Relevant implementation:
 
-## ⚡ Solution
+- [agentrust-main/api/_lib/agent.js](/Users/himanshu/Downloads/KYA/agentrust-main/api/_lib/agent.js)
+- [agentrust-main/api/memory/upload.js](/Users/himanshu/Downloads/KYA/agentrust-main/api/memory/upload.js)
+- [agentrust-main/api/memory/fetch.js](/Users/himanshu/Downloads/KYA/agentrust-main/api/memory/fetch.js)
 
-AgentTrust introduces a **verification + enforcement protocol**:
+### 2. 0G Compute
 
-- ✔ Deterministic execution → auto-verified via commitment matching
-- ✔ Non-deterministic execution → validated via **validator consensus**
-- ✔ Trust score updates based on outcomes:
-  - **+1** for accepted execution
-  - **-5** for rejected execution
-- ✔ **Staking & slashing** ensure economic accountability
-- ✔ Authorization controls protect sensitive capabilities
-- ✔ HCS-backed logs provide ordered audit visibility
+Used for:
 
-👉 Not just discovery — **trust enforcement**.
+- live validator-agent inference for non-deterministic tasks
+- isolated validator reviews through the reasoning verification lane
 
----
+Relevant implementation:
 
-## 💰 Staking & Slashing (Key Mechanism)
+- [agentrust-main/api/_lib/compute/zerogCompute.js](/Users/himanshu/Downloads/KYA/agentrust-main/api/_lib/compute/zerogCompute.js)
+- [agentrust-main/api/_lib/compute/validatorInference.js](/Users/himanshu/Downloads/KYA/agentrust-main/api/_lib/compute/validatorInference.js)
+- [agentrust-main/api/_lib/validators/validator-1.js](/Users/himanshu/Downloads/KYA/agentrust-main/api/_lib/validators/validator-1.js)
+- [agentrust-main/api/_lib/validators/validator-2.js](/Users/himanshu/Downloads/KYA/agentrust-main/api/_lib/validators/validator-2.js)
 
-AgentTrust uses economic incentives to prevent malicious behavior:
+### 3. 0G Chain
 
-- Agents / validators must stake
-- Malicious or incorrect execution → **stake slashed**
-- Honest behavior → rewarded through trust growth
+Used for:
 
-This ensures:
+- agent registration
+- execution submission
+- trust anchoring
+- validator staking
+- validator slashing hooks
 
-- malicious agents are discouraged from registering
-- validators act honestly
-- trust is backed by **economic risk, not just reputation**
+Relevant contracts:
 
----
+- [contracts-0g/AgentRegistry.sol](/Users/himanshu/Downloads/KYA/contracts-0g/AgentRegistry.sol)
+- [contracts-0g/ValidationRegistry.sol](/Users/himanshu/Downloads/KYA/contracts-0g/ValidationRegistry.sol)
+- [contracts-0g/TrustManager.sol](/Users/himanshu/Downloads/KYA/contracts-0g/TrustManager.sol)
+- [contracts-0g/StakingManager.sol](/Users/himanshu/Downloads/KYA/contracts-0g/StakingManager.sol)
 
-## 📊 Pitch & Links
+## Deployed Contract Proof
 
-- Website: https://agentrust-main.vercel.app
-- Pitch Deck: https://drive.google.com/file/d/18aSVjNUS7DMEF2GPzkEQs2h-XC23Be3Y/view?usp=sharing
-- Demo Video: https://youtu.be/t1AwxHd4zoo
-- Repo: https://github.com/himanshu37377/AgentTrust
+Current deployed addresses used by the app:
 
----
+- AgentRegistry: [`0xfcBc817A4b493D9bd169199Da5e7CB8cBecc667F`](https://chainscan-galileo.0g.ai/address/0xfcBc817A4b493D9bd169199Da5e7CB8cBecc667F)
+- ValidationRegistry: [`0xE75230ED77A6D84C05066439489e74C9182823e7`](https://chainscan-galileo.0g.ai/address/0xE75230ED77A6D84C05066439489e74C9182823e7)
+- StakingManager: [`0x0da8DFbAFd7C2cA63c120cF7d2a60cA1119B0421`](https://chainscan-galileo.0g.ai/address/0x0da8DFbAFd7C2cA63c120cF7d2a60cA1119B0421)
+- TrustManager: [`0x611a8c1C65f9Da0553468B9369D2dA1F2BFf7F0b`](https://chainscan-galileo.0g.ai/address/0x611a8c1C65f9Da0553468B9369D2dA1F2BFf7F0b)
 
-## 📁 Quick Repo Guide
+Current app network:
 
-- `agentrust-main` (`frontend`) — public React dashboard
-- `hcs-relayer` (`backend`) — agent API, verifier, metadata upload, and optional HCS relayer
-- `contracts` — Solidity protocol contracts on Hedera
+- 0G Galileo Testnet
+- RPC: `https://evmrpc-testnet.0g.ai`
+- Explorer: [chainscan-galileo.0g.ai](https://chainscan-galileo.0g.ai)
 
----
+Important reviewer note:
 
-## 🔐 Key Features
+- The repository currently documents the deployed Galileo testnet contracts used during hackathon development.
+- If the final HackQuest submission form strictly requires a 0G mainnet contract address, replace this section with the final mainnet deployment before submitting.
 
-- **Session-Based Authorization**: Time-constrained authorization for protected capabilities through `AuthorizationManager`.
-- **Agent Revocation**: Maliciously performing agents can be revoked from the protocol.
-- **Liquidation Mechanism**: Revoked agents can face stake liquidation through the staking layer.
-- **Staking and Dynamic Slashing**: Economic accountability for agents and protocol participants.
-- **Deterministic Validation**: Deterministic tasks are verified through commitment matching.
-- **Validator Voting**: Non-deterministic tasks are validated through validator consensus.
-- **Dynamic Trust Score Mechanism**: Trust changes based on execution outcomes instead of staying static.
-- **Chain of Task / Cross-Agent Accountability**: Parent and caller execution links allow accountability across multi-agent workflows.
-- **Validator Accuracy Score / Validator Reputation Layer**: Validators are scored based on how consistently they vote with final outcomes.
-- **Audit Visibility**: Protocol activity can be inspected through contract logs and HCS-backed event streams.
+## System Architecture
 
----
-
-## ⚡ Tech Stack
-
-- **HSCS**: Runs the core smart contracts on Hedera EVM.
-- **HTS**: Mints agent identity NFTs with metadata in `AgentNFT.sol`.
-- **HCS**: Stores ordered audit logs and execution events through the relayer.
-- **Mirror Node**: Reads contract events and HCS messages in the frontend.
-- **Hedera JSON-RPC**: Connects frontend and relayer to Hedera EVM contracts.
-- **Hashgraph SDK / HCS-14**: Used for UAID generation.
-- **ERC-8004 aligned flow**: Used for agent identity / NFT-based registration.
-- **Solidity + Foundry**: Smart contract development and testing.
-- **React + Vite + TypeScript**: Frontend dashboard.
-- **Node.js**: Relayer, verifier, and metadata upload service.
-- **Ethers**: Contract interaction and event decoding.
-
----
-
-## 🧱 Architecture
-
-```
-React Frontend
-      ↓
-Relayer / Backend
-      ↓
-Hedera Smart Contracts
-      ↓
-Hedera Network (HCS + Mirror Node)
+```mermaid
+flowchart TD
+  U["User"] --> FE["React Frontend"]
+  FE --> OC["OpenClaw Orchestration Layer"]
+  OC --> TC["Task Classification Hook"]
+  TC -->|Deterministic| DP["Deterministic Verification Pipeline"]
+  TC -->|Non-deterministic| RP["Reasoning Pipeline"]
+  RP --> V1["Validator Agent 1 via 0G Compute"]
+  RP --> V2["Validator Agent 2 via 0G Compute"]
+  DP --> VE["Execution Envelope"]
+  V1 --> VE
+  V2 --> VE
+  VE --> S["0G Storage"]
+  VE --> VC["ValidationRegistry"]
+  VC --> TM["TrustManager"]
+  TM --> AR["AgentRegistry / StakingManager"]
+  S --> UI["Memory Viewer + Validator Agent Activity + Trust UI"]
+  TM --> UI
+  AR --> UI
 ```
 
----
+## Verification Model
 
-## 🔁 Flow
+### Deterministic Tasks
 
-1. Register agent (metadata, capabilities, risk, type)
-2. Execute task via UI
-3. Submit execution to validation
-4. Verify:
-   - deterministic → auto
-   - non-deterministic → validator voting
-5. Update trust score (+1 / -5)
-6. Apply slashing if malicious
-7. Inspect logs (contracts + HCS)
+Examples:
 
----
+- arithmetic
+- exact calculator operations
+- canonical deterministic transformations
 
-## 📂 Repository
+Flow:
 
-- `contracts/` — core protocol
-- `agentrust-main/` — frontend UI
-- `hcs-relayer/` — backend + HCS
-- `lib/` — dependencies
+- generator output
+- normalization
+- deterministic recomputation
+- commitment verification
+- on-chain execution settlement
 
----
+### Non-Deterministic Tasks
 
-## ⚙️ Core Contracts
+Examples:
 
-- AgentRegistry — registration, metadata, capabilities
-- ValidationRegistry — execution + consensus
-- ReputationRegistry — trust updates
-- StakingManager — staking & slashing
-- AuthorizationManager — permissions
-- AgentDiscovery — search & ranking
-- AgentNFT — identity
+- explanations
+- summarization
+- planning
+- reasoning-heavy analysis
 
----
+Flow:
 
-## 🔍 Differentiation
+- generator output
+- isolated validator-agent execution
+- minority-veto / review-required logic
+- 0G Storage memory persistence
+- 0G Chain anchoring
 
-```
-Existing Registries → discovery + identity
-AgentTrust → verification + enforcement
-```
+## Validator Agents
 
-AgentTrust focuses on:
+Validator agents are a core feature of the project, not a mock UI concept.
 
-- what agents **do** (execution)
-- not just who they **are** (identity)
+Current validator roles:
 
----
+- Validator Agent 1: factual consistency, deterministic sanity, internal correctness
+- Validator Agent 2: reasoning coherence, hallucination detection, contextual relevance
 
-## 🧠 Philosophy
+Relevant files:
 
-```
-Trust is not claimed.
-Trust is verified.
-Trust is enforced.
-```
+- [agentrust-main/api/_lib/validators/validator-1.js](/Users/himanshu/Downloads/KYA/agentrust-main/api/_lib/validators/validator-1.js)
+- [agentrust-main/api/_lib/validators/validator-2.js](/Users/himanshu/Downloads/KYA/agentrust-main/api/_lib/validators/validator-2.js)
+- [agentrust-main/api/_lib/validators/index.js](/Users/himanshu/Downloads/KYA/agentrust-main/api/_lib/validators/index.js)
 
----
+## Frontend Pages
 
-## ⚙️ Setup
+- `/register` — wallet-based agent registration and 0G metadata upload
+- `/explore` — agent discovery and task composition
+- `/executions` — execution history, memory, and verification trail
+- `/validators` — validator-agent activity, issue escalation, human review votes
 
-### 1. Clone the repo
+Relevant app files:
+
+- [agentrust-main/src/pages/RegisterAgentPage.tsx](/Users/himanshu/Downloads/KYA/agentrust-main/src/pages/RegisterAgentPage.tsx)
+- [agentrust-main/src/pages/ExplorePage.tsx](/Users/himanshu/Downloads/KYA/agentrust-main/src/pages/ExplorePage.tsx)
+- [agentrust-main/src/pages/ExecutionsPage.tsx](/Users/himanshu/Downloads/KYA/agentrust-main/src/pages/ExecutionsPage.tsx)
+- [agentrust-main/src/pages/ValidatorsPage.tsx](/Users/himanshu/Downloads/KYA/agentrust-main/src/pages/ValidatorsPage.tsx)
+
+## Demo Flow
+
+Recommended judge demo:
+
+1. Register `Math Agent ND` or another agent profile on `/register`.
+2. Generate and upload wallet-bound metadata to 0G Storage.
+3. Compose a task from `/explore`.
+4. For deterministic tasks, show recomputation and commitment verification.
+5. For non-deterministic tasks, show validator-agent reviews and 0G Compute-backed reasoning verification.
+6. Show the 0G Storage root and memory log entry.
+7. Show the on-chain execution / trust transaction on the 0G explorer.
+8. Open `/validators` and show Validator Agent Activity plus issue escalation.
+9. Open `/executions` to show persistent history reload.
+
+## Local Reproduction
+
+### 1. Install dependencies
 
 ```bash
-git clone https://github.com/himanshu37377/AgentTrust.git
-cd AgentTrust
-```
-
-### 2. Install and build contracts
-
-```bash
-forge install
+cd agentrust-main
+npm install
+cd ..
 forge build
 ```
 
-### 3. Frontend and backend setup
+### 2. Configure environment
 
-For detailed setup instructions, environment variables, and run commands, see:
+Create a local env file from:
 
-- [Frontend README](/Users/himanshu/Downloads/KYA/agentrust-main/README.md)
-- [Backend README](/Users/himanshu/Downloads/KYA/hcs-relayer/README.md)
+- [agentrust-main/.env.example](/Users/himanshu/Downloads/KYA/agentrust-main/.env.example)
 
----
+Minimum frontend / chain variables:
 
-## 🌐 Environment Overview
+- `VITE_ZEROG_RPC_URL`
+- `VITE_ZEROG_CHAIN_ID`
+- `VITE_AGENT_REGISTRY_ADDRESS`
+- `VITE_VALIDATION_REGISTRY_ADDRESS`
+- `VITE_STAKING_MANAGER_ADDRESS`
+- `VITE_TRUST_MANAGER_ADDRESS`
 
-- Frontend UI: `agentrust-main`
-- Backend agent / verifier / metadata upload API: `hcs-relayer`
-- Network: Hedera Testnet
+Minimum 0G Storage variables:
 
----
+- `ZEROG_EVM_RPC`
+- `ZEROG_INDEXER_RPC`
+- `ZEROG_PRIVATE_KEY`
 
-## 🛰️ Hedera Testnet Deployment Reference
+Minimum 0G Compute variables:
 
-Current demo account:
+- `ZEROG_COMPUTE_API_KEY`
+- `ZEROG_COMPUTE_BASE_URL`
+- `ZEROG_COMPUTE_MODEL`
 
-- Testnet account ID: `0.0.7162616`
+Optional OpenClaw / Gemini variables:
 
-Current HCS topic:
+- `OPENCLAW_RUNTIME_ENABLED`
+- `OPENCLAW_PROFILE`
+- `GEMINI_API_KEY`
 
-- `VITE_HEDERA_VALIDATION_TOPIC_ID=0.0.8322593`
+### 3. Run the app
 
-Current contract deployments:
+```bash
+cd agentrust-main
+npm run dev:api
+npm run dev
+```
 
-- `AgentRegistry`: `0xA94E50b71b8211D4f281778560d3359a68798fd1` (`0.0.83387560`)
-- `ReputationRegistry`: `0xf753820da4681a2B5C78E3a229b8B6aC0e7C5262` (`0.0.8338764`)
-- `ValidationRegistry`: `0x4D6f0ea66716eD3bA9cdB8da0CeE72343d7f7423` (`0.0.8338770`)
-- `AgentNFT`: `0xE9a2F8A8a838D6a8155a673FC160d4e83e10250F` (`0.0.8338758`)
-- `StakingManager`: `0xfA6349bCcCB99A8e56b34357670f7Ae0B6445568` (`0.0.8338767`)
-- `AuthorizationManager`: `0xC536DfdAbB01efC7b02F2a743D4160C4523f28f0` (`0.0.8338761`)
+### 4. Run contract tests
 
-These are the addresses currently used by the demo frontend.
+```bash
+cd ..
+forge test --offline
+```
 
----
+### 5. Run validator-agent smoke test
+
+```bash
+cd agentrust-main
+npm run test:validators
+```
+
+## Reviewer Notes
+
+- The local API server runs on `http://localhost:3001`.
+- The Vite frontend proxies `/api/*` and `/metadata/upload` to the local API server.
+- Non-deterministic tasks require 0G Compute credentials for validator-agent execution.
+- 0G Storage uploads require uploader credentials to produce live storage roots.
+- MetaMask should be connected to 0G Galileo Testnet for local review.
+
+## Test / Validation Status
+
+Verified in this repo:
+
+- `forge test --offline`
+- `npm run build`
+- `npm run test:validators` when the environment has working network access to the 0G Compute router
+
+## Repository Structure
+
+- [agentrust-main](/Users/himanshu/Downloads/KYA/agentrust-main) — frontend, local API server, OpenClaw-compatible runtime, validator agents, and 0G integration
+- [contracts-0g](/Users/himanshu/Downloads/KYA/contracts-0g) — primary 0G Chain contracts used by the app
+- [contracts](/Users/himanshu/Downloads/KYA/contracts) — older contract set retained for reference
+- [hcs-relayer](/Users/himanshu/Downloads/KYA/hcs-relayer) — legacy relayer code retained from the earlier architecture
+
+## Submission Checklist
+
+For HackQuest submission, prepare and attach:
+
+- GitHub repository link
+- deployed contract address section from this README
+- explorer links showing on-chain activity
+- 3-minute demo video link
+- public X post with `#0GHackathon` and `#BuildOn0G`
+- optional frontend demo link / slides
+
+## Positioning
+
+AgentTrust should be understood as:
+
+> A 0G-native hybrid verification and persistent memory infrastructure for autonomous AI agents.
+
+Not as:
+
+> A generic AI app with storage added afterward.
