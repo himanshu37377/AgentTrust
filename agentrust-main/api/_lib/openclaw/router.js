@@ -5,8 +5,6 @@ const DETERMINISTIC_PATTERNS = [
   /\bcalculate\b/i,
   /\barithmetic\b/i,
   /\bequation\b/i,
-  /\bparse\b/i,
-  /\btransform\b/i,
 ];
 
 const REASONING_PATTERNS = [
@@ -67,12 +65,8 @@ export function classifyPrompt(prompt) {
 
 export function resolveClassification(prompt, context = {}) {
   const base = classifyPrompt(prompt);
-  const arithmeticQuick = context.tryEvaluateArithmetic?.(prompt);
-  const arithmeticEligible = Boolean(arithmeticQuick);
   const forceReasoningLane = context.verificationLane === "reasoning";
-  const forceDeterministicLane =
-    context.verificationLane === "deterministic" ||
-    (arithmeticEligible && context.verificationLane !== "reasoning");
+  const forceDeterministicLane = context.verificationLane === "deterministic";
 
   if (forceReasoningLane && base.taskType !== "reasoning") {
     return {
