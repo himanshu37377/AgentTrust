@@ -36,6 +36,11 @@ export async function runValidatorInferenceOnZeroGCompute(prompt, generatedResul
     return { ok: false, error: "0G Compute validator response was not valid JSON.", provider: "0g-compute" };
   }
 
+  if (typeof parsed.approved !== "boolean") {
+    return { ok: false, error: "0G Compute validator response is missing boolean approved.", provider: "0g-compute" };
+  }
+
+
   const concerns = Array.isArray(parsed.concerns)
     ? parsed.concerns.filter((item) => typeof item === "string")
     : [];
@@ -53,7 +58,7 @@ export async function runValidatorInferenceOnZeroGCompute(prompt, generatedResul
       validatorLabel: validatorConfig.label,
       validatorId: validatorConfig.id,
       focus: validatorConfig.focus,
-      approved: typeof parsed.approved === "boolean" ? parsed.approved : concerns.length === 0,
+      approved: parsed.approved,
       confidence:
         typeof parsed.confidence === "number"
           ? Math.max(0.5, Math.min(0.99, Number(parsed.confidence.toFixed(2))))
