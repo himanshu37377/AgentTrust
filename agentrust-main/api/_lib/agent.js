@@ -39,8 +39,6 @@ const DETERMINISTIC_PATTERNS = [
   /\bcalculate\b/i,
   /\barithmetic\b/i,
   /\bequation\b/i,
-  /\bparse\b/i,
-  /\btransform\b/i,
 ];
 
 const REASONING_PATTERNS = [
