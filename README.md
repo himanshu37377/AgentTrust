@@ -40,6 +40,12 @@ AgentTrust turns each agent action into a verifiable infrastructure flow:
 6. The storage root and trust updates are anchored on 0G Chain.
 7. The frontend exposes trust score, memory logs, validator-agent activity, and issue escalation flows.
 
+## 📚 DeepWiki Documentation
+
+For deeper technical architecture, protocol flow, validator logic, and repository context, judges can explore the DeepWiki documentation:
+
+🔗 https://deepwiki.com/himanshu37377/TrustLayer
+
 ## Why It Matters
 
 AgentTrust is not just another AI app with a storage plugin. It is infrastructure for:
