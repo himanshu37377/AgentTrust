@@ -49,8 +49,8 @@ type VerificationMode = "deterministic" | "non-deterministic";
 
 const starOptions = [1, 2, 3, 4, 5] as const;
 const verifierModelLabel = "Verifier: Gemini 2.5 Flash (Deterministic Mode)";
-const VALIDATOR_REVIEW_STORAGE_KEY = "agentrust.pending-validator-executions";
-const NON_DETERMINISTIC_STATUS_STORAGE_KEY = "agentrust.pending-nondeterministic-status";
+const VALIDATOR_REVIEW_STORAGE_KEY = "trustlayer.pending-validator-executions";
+const NON_DETERMINISTIC_STATUS_STORAGE_KEY = "trustlayer.pending-nondeterministic-status";
 const NON_DETERMINISTIC_REVIEW_TTL_MS = 4 * 60 * 1000;
 const INVALID_QUERY_GUIDANCE = "Please enter a valid calculator query, like 3+4 or sum of numbers from 1 to 10.";
 

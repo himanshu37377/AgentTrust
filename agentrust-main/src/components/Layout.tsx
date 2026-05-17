@@ -188,10 +188,10 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           <div className="flex items-center gap-3">
             <img
               src="/agentrust-logo.svg"
-              alt="AgentTrust logo"
+              alt="TrustLayer logo"
               className="size-10 rounded-lg border border-white/10 bg-background-dark/70 p-1"
             />
-            <Link to="/" className="text-xl font-bold tracking-tight text-white">AgentTrust</Link>
+            <Link to="/" className="text-xl font-bold tracking-tight text-white">TrustLayer</Link>
           </div>
           <nav className="hidden md:flex items-center gap-8">
             {navLinks.map((link) => (
@@ -305,7 +305,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         <div className="max-w-[1280px] mx-auto px-6 flex flex-col md:flex-row justify-between items-center gap-8">
           <div className="flex items-center gap-2 opacity-80">
             <span className="material-symbols-outlined text-trust-accent-blue">security</span>
-            <span className="font-bold text-white">AgentTrust Protocol</span>
+            <span className="font-bold text-white">TrustLayer Protocol</span>
           </div>
           <div className="flex gap-8 text-sm text-slate-500 font-medium">
             <a className="hover:text-white transition-colors" href="#">Whitepaper</a>

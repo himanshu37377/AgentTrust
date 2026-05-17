@@ -32,7 +32,7 @@ type RaisedIssue = {
   storageTxSeq?: number;
 };
 
-const VALIDATOR_ISSUE_STORAGE_KEY = "agentrust.validator-raised-issues";
+const VALIDATOR_ISSUE_STORAGE_KEY = "trustlayer.validator-raised-issues";
 
 function consensusConfidencePercent(activity: ValidatorReviewActivity): number {
   if (activity.validatorResults.length > 0) {

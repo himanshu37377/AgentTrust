@@ -19,7 +19,7 @@ const GEMINI_BASE_URL =
 const GEMINI_MODEL = process.env.GEMINI_MODEL?.trim() || "gemini-2.5-flash";
 const GEMINI_VERIFIER_MODEL = process.env.GEMINI_VERIFIER_MODEL?.trim() || GEMINI_MODEL;
 const OPENCLAW_BIN = process.env.OPENCLAW_BIN?.trim() || "openclaw";
-const OPENCLAW_PROFILE = process.env.OPENCLAW_PROFILE?.trim() || "agentrust";
+const OPENCLAW_PROFILE = process.env.OPENCLAW_PROFILE?.trim() || "trustlayer";
 const OPENCLAW_RUNTIME_ENABLED = process.env.OPENCLAW_RUNTIME_ENABLED?.trim() === "1";
 const OPENCLAW_GENERATOR_MODEL = process.env.OPENCLAW_GENERATOR_MODEL?.trim() || "";
 const OPENCLAW_VALIDATOR_MODEL = process.env.OPENCLAW_VALIDATOR_MODEL?.trim() || OPENCLAW_GENERATOR_MODEL;
@@ -252,7 +252,7 @@ function buildReasoningFallback(prompt, context, classification) {
       return {
         result: {
           summary: prompt.slice(0, 220),
-          keyPoint: `Agent "${context.agentName || "AgentTrust Worker"}" condensed the request using ${capabilityText}.`,
+          keyPoint: `Agent "${context.agentName || "TrustLayer Worker"}" condensed the request using ${capabilityText}.`,
           memoryAction: "Persist the summary as long-context agent memory.",
         },
         summary: "Prompt summarized for long-context memory.",
@@ -412,7 +412,7 @@ async function generateReasoningWithGemini(prompt, context, classification) {
           parts: [
             {
               text: [
-                "You are the generator agent inside AgentTrust v2.",
+                "You are the generator agent inside TrustLayer v2.",
                 "Respond for an autonomous agent workflow.",
                 "Return strict JSON with keys: output, reasoning, confidence, summary.",
                 "Keep output concise but useful.",
@@ -620,7 +620,7 @@ async function runValidatorAgent(prompt, generatedResult, validatorConfig, confi
             parts: [
               {
                 text: [
-                  `You are ${validatorConfig.id} inside AgentTrust v2.`,
+                  `You are ${validatorConfig.id} inside TrustLayer v2.`,
                   validatorConfig.systemPrompt,
                   "You are an isolated validator execution, not the generator.",
                   "Do not rewrite the answer. Only evaluate it.",
@@ -753,7 +753,7 @@ async function deterministicPipeline(prompt, context, classification) {
   return {
     output: recomputed.output,
     reasoning: [
-      `OpenClaw routed the task into the deterministic lane for agent ${context.agentName || "AgentTrust Worker"}.`,
+      `OpenClaw routed the task into the deterministic lane for agent ${context.agentName || "TrustLayer Worker"}.`,
       recomputed.reasoning,
       "The output was normalized and compared against the canonical recomputed value without relying on a second LLM.",
     ].join(" "),
@@ -863,7 +863,7 @@ async function orchestratePrompt(prompt, context = {}) {
 }
 
 export function executePrompt(prompt, context = {}) {
-  throw new Error("executePrompt is async in AgentTrust v2. Use executePromptV2 instead.");
+  throw new Error("executePrompt is async in TrustLayer v2. Use executePromptV2 instead.");
 }
 
 export async function executePromptV2(prompt, context = {}) {
@@ -1087,7 +1087,7 @@ function serializeMemoryForZeroGUpload(memory, kind) {
   const envelope = { kind, uploadedAt, memory };
   const mem = memory && typeof memory === "object" && !Array.isArray(memory) ? memory : {};
   const lines = [
-    "AgentTrust — 0G Storage Memory Record",
+    "TrustLayer — 0G Storage Memory Record",
     "=".repeat(48),
     `Kind: ${kind}`,
     `Uploaded: ${uploadedAt}`,
@@ -1166,7 +1166,7 @@ function parseZeroGUploadEnvelope(text) {
 
 function buildTextUploadFile(textBody, kind) {
   const safeKind = safeUploadKindLabel(kind);
-  const filename = `agentrust-${safeKind}-${Date.now()}.txt`;
+  const filename = `trustlayer-${safeKind}-${Date.now()}.txt`;
   const mime = "text/plain; charset=utf-8";
   const FileCtor = globalThis.File ?? NodeBufferFile;
   if (typeof FileCtor === "function") {

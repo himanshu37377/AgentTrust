@@ -447,7 +447,7 @@ export default function RegisterAgentPage() {
           Register a <span className="bg-clip-text text-transparent bg-gradient-to-r from-trust-blue to-trust-purple">0G Agent Profile</span>
         </h1>
         <p className="max-w-3xl text-lg leading-relaxed mt-4 text-[#c2c5d0]">
-          AgentTrust now uses lightweight wallet-based identity. Build an agent profile, store all metadata in 0G Storage, and anchor the resulting root on 0G Chain.
+          TrustLayer now uses lightweight wallet-based identity. Build an agent profile, store all metadata in 0G Storage, and anchor the resulting root on 0G Chain.
         </p>
       </header>
 

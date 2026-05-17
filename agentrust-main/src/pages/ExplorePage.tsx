@@ -411,7 +411,7 @@ export default function ExplorePage() {
           Discover <span className="text-gradient">AI Agents</span>
         </h1>
         <p className="text-slate-300 text-lg max-w-2xl font-normal">
-          Search and discover autonomous agents verified by the AgentTrust protocol.
+          Search and discover autonomous agents verified by the TrustLayer protocol.
           High-assurance execution for decentralized workflows.
         </p>
       </div>

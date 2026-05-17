@@ -12,8 +12,8 @@ import {
 
 const abiCoder = AbiCoder.defaultAbiCoder();
 const ZERO_HASH = `0x${"0".repeat(64)}`;
-const VALIDATOR_REVIEW_STORAGE_KEY = "agentrust.pending-validator-executions";
-const AGENT_REVIEW_STORAGE_KEY = "agentrust.agent-reviews";
+const VALIDATOR_REVIEW_STORAGE_KEY = "trustlayer.pending-validator-executions";
+const AGENT_REVIEW_STORAGE_KEY = "trustlayer.agent-reviews";
 const delay = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
 
 export interface AgentCapability {
@@ -1234,7 +1234,7 @@ export async function authorizeAgentCapabilities(agentId: number, skillIds: numb
   const connected = await getConnectedAddress();
   if (!connected) throw new Error("Connect your wallet before authorizing agent capabilities.");
 
-  const key = `agentrust.authorizations:${connected.toLowerCase()}:${agentId}`;
+  const key = `trustlayer.authorizations:${connected.toLowerCase()}:${agentId}`;
   window.localStorage.setItem(key, JSON.stringify(skillIds));
   return { hash: `0xauth${Date.now().toString(16)}` };
 }
@@ -1249,7 +1249,7 @@ export async function fetchAgentAuthorizationStatus(agentId: number, skillIds: n
     };
   }
 
-  const key = `agentrust.authorizations:${connected.toLowerCase()}:${agentId}`;
+  const key = `trustlayer.authorizations:${connected.toLowerCase()}:${agentId}`;
   const raw = window.localStorage.getItem(key);
   const authorized = raw ? (JSON.parse(raw) as number[]) : [];
   const unauthorizedSkillIds = skillIds.filter((skillId) => !authorized.includes(skillId));
@@ -1508,21 +1508,9 @@ export async function anchorReasoningExecution({
   storageTxSeqOverride?: number;
   validationTxHash?: string;
 }) {
-  const signer = await getBrowserSigner();
-  const trustAddress = getTrustManagerAddress();
-  if (!trustAddress) {
-    throw new Error("Missing VITE_TRUST_MANAGER_ADDRESS");
-  }
-
-  const trust = new Contract(trustAddress, TRUST_MANAGER_ABI, signer);
   const agentAddress = await resolveAgentAddressForExecution(agentId);
   const target = await resolveAgentByNumericId(agentId);
-  const provider = signer.provider ?? null;
-  let trustBefore = Number(await trust.getTrustScore(agentAddress));
-  if (provider) {
-    const headBlock = await provider.getBlockNumber();
-    trustBefore = Number(await trust.getTrustScore(agentAddress, { blockTag: headBlock }));
-  }
+  const trustBefore = (await getTrustScoreSnapshot(agentAddress)) ?? undefined;
   const memoryPayload = await buildExecutionMemoryPayload({
     agentId,
     prompt,
@@ -1538,13 +1526,7 @@ export async function anchorReasoningExecution({
       }
     : await uploadExecutionEnvelope(memoryPayload);
   const success = execution.verification?.verificationStatus === "verified";
-  const tx = await trust.recordInteraction(agentAddress, upload.storageHash, success);
-  const receipt = await tx.wait();
-  let trustAfter = Number(await trust.getTrustScore(agentAddress));
-  if (provider && receipt?.blockNumber != null) {
-    const blockTag = typeof receipt.blockNumber === "bigint" ? Number(receipt.blockNumber) : receipt.blockNumber;
-    trustAfter = Number(await trust.getTrustScore(agentAddress, { blockTag }));
-  }
+  const trustAfter = (await getTrustScoreSnapshot(agentAddress)) ?? trustBefore;
 
   await postMemoryLog({
     id: executionId ? `execution-${executionId}` : upload.storageHash ? `review-${upload.storageHash}` : undefined,
@@ -1561,9 +1543,8 @@ export async function anchorReasoningExecution({
     storageHash: upload.storageHash,
     storageTxSeq: upload.storageTxSeq ?? storageTxSeqOverride,
     uploadMode: upload.uploadMode,
-    txHash: validationTxHash || tx.hash,
+    txHash: validationTxHash || upload.storageHash,
     validationTxHash,
-    trustTxHash: tx.hash,
     verificationType: inferVerificationType(execution),
     verificationStatus: execution.verification?.verificationStatus ?? "review_required",
     provenance: execution.verification?.provenance,
@@ -1574,11 +1555,11 @@ export async function anchorReasoningExecution({
   });
 
   return {
-    hash: tx.hash as string,
+    hash: validationTxHash || upload.storageHash,
     storageHash: upload.storageHash,
     uploadMode: upload.uploadMode,
-    trustBefore,
-    trustAfter,
+    trustBefore: trustBefore ?? 0,
+    trustAfter: trustAfter ?? trustBefore ?? 0,
   };
 }
 

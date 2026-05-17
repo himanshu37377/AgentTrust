@@ -1,6 +1,10 @@
-# AgentTrust Frontend
+# TrustLayer Frontend
 
-This frontend is the live demo surface for the 0G-native AgentTrust flow.
+This frontend is the live demo surface for the 0G-native TrustLayer flow.
+
+Live demo:
+
+- [https://trustlayer-app.vercel.app](https://trustlayer-app.vercel.app)
 
 ## What it shows
 

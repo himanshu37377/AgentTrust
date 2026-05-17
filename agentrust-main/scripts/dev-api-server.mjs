@@ -99,7 +99,7 @@ const server = http.createServer(async (request, response) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`AgentTrust API server listening on http://localhost:${PORT}`);
+  console.log(`TrustLayer API server listening on http://localhost:${PORT}`);
   console.log("Available routes:");
   console.log("- POST /api/agent/execute");
   console.log("- POST /api/verify");

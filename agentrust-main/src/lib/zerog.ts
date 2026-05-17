@@ -119,7 +119,7 @@ export async function registerAgent(input: {
     capabilities: input.capabilities,
     walletAddress: wallet.address,
     createdAt: new Date().toISOString(),
-    framework: "AgentTrust on 0G",
+    framework: "TrustLayer on 0G",
   };
 
   const upload = await postJson<{

@@ -11,7 +11,7 @@ function formatResultText(generatedResult) {
 export async function runValidatorInferenceOnZeroGCompute(prompt, generatedResult, validatorConfig, generatorConfidence) {
   const resultText = formatResultText(generatedResult);
   const system = [
-    `You are ${validatorConfig.label} (${validatorConfig.id}) inside AgentTrust v2.`,
+    `You are ${validatorConfig.label} (${validatorConfig.id}) inside TrustLayer v2.`,
     validatorConfig.systemPrompt,
     "You are an isolated validator execution, not the generator.",
     "Do not rewrite the answer. Only evaluate it.",

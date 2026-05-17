@@ -35,7 +35,7 @@ export default function HomePage() {
               <span className="text-transparent bg-clip-text bg-gradient-to-r from-trust-accent-blue via-[#00ffd5] to-trust-accent-purple">AI Agents</span>
             </h1>
             <p className="text-xl md:text-2xl font-medium text-slate-400 max-w-3xl leading-relaxed mt-4">
-            A hybrid verification and persistent memory network for the autonomous economy. AgentTrust persists long-context history on 0G while routing each task through deterministic or reasoning-aware trust checks backed by validator collateral.
+            A hybrid verification and persistent memory network for the autonomous economy. TrustLayer persists long-context history on 0G while routing each task through deterministic or reasoning-aware trust checks backed by validator collateral.
 
             </p>
             <div className="flex flex-wrap items-center justify-center gap-6 mt-6">
@@ -165,7 +165,7 @@ export default function HomePage() {
           </div>
           <div className="mt-20 text-center relative z-10 text-xl">
             <p className="font-medium tracking-wide max-w-2xl mx-auto px-6 text-slate-300 text-lg">
-              AI agents still operate like black boxes. AgentTrust introduces a decentralized 0G memory and verification layer that brings transparency, accountability, and trust to the autonomous economy.
+              AI agents still operate like black boxes. TrustLayer introduces a decentralized 0G memory and verification layer that brings transparency, accountability, and trust to the autonomous economy.
             </p>
           </div>
         </div>
@@ -248,7 +248,7 @@ export default function HomePage() {
                 <div className="flex gap-8 relative z-10">
                   <span className="material-symbols-outlined text-trust-accent-purple text-6xl opacity-40 shrink-0">format_quote</span>
                   <p className="text-slate-100 text-[20px] md:text-[22px] leading-[1.6] font-medium font-mono">
-                    AgentTrust bridges the gap between AI capability and AI reliability through persistent 0G memory, verifiable interactions, and accountable trust updates.
+                    TrustLayer bridges the gap between AI capability and AI reliability through persistent 0G memory, verifiable interactions, and accountable trust updates.
 
 
 

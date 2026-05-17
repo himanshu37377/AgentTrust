@@ -1,16 +1,16 @@
 <p align="center">
-  <img src="agentrust-main/public/agentrust-logo.svg" alt="AgentTrust Logo" width="120" />
+  <img src="agentrust-main/public/agentrust-logo.svg" alt="TrustLayer Logo" width="120" />
 </p>
 
-# AgentTrust
+# TrustLayer
 
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/himanshu37377/TrustLayer)
 
-AgentTrust is a 0G-native hybrid verification, persistent memory, and trust infrastructure for autonomous AI agents using OpenClaw orchestration, 0G Compute validator agents, 0G Storage memory, and 0G Chain settlement.
+TrustLayer is a 0G-native hybrid verification, persistent memory, and trust infrastructure for autonomous AI agents using OpenClaw orchestration, 0G Compute validator agents, 0G Storage memory, and 0G Chain settlement.
 
 ## One-Sentence Description
 
-AgentTrust gives autonomous AI agents persistent decentralized memory, validator-reviewed reasoning, and an on-chain trust layer so users can inspect long-term behavioral history instead of trusting opaque one-off outputs.
+TrustLayer gives autonomous AI agents persistent decentralized memory, validator-reviewed reasoning, and an on-chain trust layer so users can inspect long-term behavioral history instead of trusting opaque one-off outputs.
 
 ## Hackathon Track
 
@@ -30,9 +30,9 @@ This makes it hard for users, integrators, and future agent marketplaces to answ
 
 Can this agent be trusted based on what it has actually done before?
 
-## What AgentTrust Does
+## What TrustLayer Does
 
-AgentTrust turns each agent action into a verifiable infrastructure flow:
+TrustLayer turns each agent action into a verifiable infrastructure flow:
 
 1. An agent executes a task.
 2. OpenClaw routes the task into deterministic or non-deterministic verification.
@@ -50,7 +50,7 @@ For deeper technical architecture, protocol flow, validator logic, and repositor
 
 ## Why It Matters
 
-AgentTrust is not just another AI app with a storage plugin. It is infrastructure for:
+TrustLayer is not just another AI app with a storage plugin. It is infrastructure for:
 
 - autonomous AI agents
 - persistent decentralized memory
@@ -75,9 +75,9 @@ Used for:
 
 Relevant implementation:
 
-- [agentrust-main/api/_lib/agent.js](/Users/himanshu/Downloads/KYA/agentrust-main/api/_lib/agent.js)
-- [agentrust-main/api/memory/upload.js](/Users/himanshu/Downloads/KYA/agentrust-main/api/memory/upload.js)
-- [agentrust-main/api/memory/fetch.js](/Users/himanshu/Downloads/KYA/agentrust-main/api/memory/fetch.js)
+- [Agent Runtime](/Users/himanshu/Downloads/KYA/agentrust-main/api/_lib/agent.js)
+- [Memory Upload Route](/Users/himanshu/Downloads/KYA/agentrust-main/api/memory/upload.js)
+- [Memory Fetch Route](/Users/himanshu/Downloads/KYA/agentrust-main/api/memory/fetch.js)
 
 ### 2. 0G Compute
 
@@ -88,10 +88,10 @@ Used for:
 
 Relevant implementation:
 
-- [agentrust-main/api/_lib/compute/zerogCompute.js](/Users/himanshu/Downloads/KYA/agentrust-main/api/_lib/compute/zerogCompute.js)
-- [agentrust-main/api/_lib/compute/validatorInference.js](/Users/himanshu/Downloads/KYA/agentrust-main/api/_lib/compute/validatorInference.js)
-- [agentrust-main/api/_lib/validators/validator-1.js](/Users/himanshu/Downloads/KYA/agentrust-main/api/_lib/validators/validator-1.js)
-- [agentrust-main/api/_lib/validators/validator-2.js](/Users/himanshu/Downloads/KYA/agentrust-main/api/_lib/validators/validator-2.js)
+- [0G Compute Client](/Users/himanshu/Downloads/KYA/agentrust-main/api/_lib/compute/zerogCompute.js)
+- [Validator Inference Adapter](/Users/himanshu/Downloads/KYA/agentrust-main/api/_lib/compute/validatorInference.js)
+- [Validator Agent 1](/Users/himanshu/Downloads/KYA/agentrust-main/api/_lib/validators/validator-1.js)
+- [Validator Agent 2](/Users/himanshu/Downloads/KYA/agentrust-main/api/_lib/validators/validator-2.js)
 
 ### 3. 0G Chain
 
@@ -124,6 +124,7 @@ Current app network:
 - 0G Galileo Testnet
 - RPC: `https://evmrpc-testnet.0g.ai`
 - Explorer: [chainscan-galileo.0g.ai](https://chainscan-galileo.0g.ai)
+- Live frontend demo: [https://trustlayer-app.vercel.app](https://trustlayer-app.vercel.app)
 
 Important reviewer note:
 
@@ -199,9 +200,9 @@ Current validator roles:
 
 Relevant files:
 
-- [agentrust-main/api/_lib/validators/validator-1.js](/Users/himanshu/Downloads/KYA/agentrust-main/api/_lib/validators/validator-1.js)
-- [agentrust-main/api/_lib/validators/validator-2.js](/Users/himanshu/Downloads/KYA/agentrust-main/api/_lib/validators/validator-2.js)
-- [agentrust-main/api/_lib/validators/index.js](/Users/himanshu/Downloads/KYA/agentrust-main/api/_lib/validators/index.js)
+- [Validator Agent 1](/Users/himanshu/Downloads/KYA/agentrust-main/api/_lib/validators/validator-1.js)
+- [Validator Agent 2](/Users/himanshu/Downloads/KYA/agentrust-main/api/_lib/validators/validator-2.js)
+- [Validator Registry](/Users/himanshu/Downloads/KYA/agentrust-main/api/_lib/validators/index.js)
 
 ## Frontend Pages
 
@@ -212,10 +213,10 @@ Relevant files:
 
 Relevant app files:
 
-- [agentrust-main/src/pages/RegisterAgentPage.tsx](/Users/himanshu/Downloads/KYA/agentrust-main/src/pages/RegisterAgentPage.tsx)
-- [agentrust-main/src/pages/ExplorePage.tsx](/Users/himanshu/Downloads/KYA/agentrust-main/src/pages/ExplorePage.tsx)
-- [agentrust-main/src/pages/ExecutionsPage.tsx](/Users/himanshu/Downloads/KYA/agentrust-main/src/pages/ExecutionsPage.tsx)
-- [agentrust-main/src/pages/ValidatorsPage.tsx](/Users/himanshu/Downloads/KYA/agentrust-main/src/pages/ValidatorsPage.tsx)
+- [Register Page](/Users/himanshu/Downloads/KYA/agentrust-main/src/pages/RegisterAgentPage.tsx)
+- [Explore Page](/Users/himanshu/Downloads/KYA/agentrust-main/src/pages/ExplorePage.tsx)
+- [Executions Page](/Users/himanshu/Downloads/KYA/agentrust-main/src/pages/ExecutionsPage.tsx)
+- [Validators Page](/Users/himanshu/Downloads/KYA/agentrust-main/src/pages/ValidatorsPage.tsx)
 
 ## Demo Flow
 
@@ -246,7 +247,7 @@ forge build
 
 Create a local env file from:
 
-- [agentrust-main/.env.example](/Users/himanshu/Downloads/KYA/agentrust-main/.env.example)
+- [Frontend Env Example](/Users/himanshu/Downloads/KYA/agentrust-main/.env.example)
 
 Minimum frontend / chain variables:
 
@@ -315,7 +316,7 @@ Verified in this repo:
 
 ## Repository Structure
 
-- [agentrust-main](/Users/himanshu/Downloads/KYA/agentrust-main) — frontend, local API server, OpenClaw-compatible runtime, validator agents, and 0G integration
+- [Frontend App Directory](/Users/himanshu/Downloads/KYA/agentrust-main) — frontend, local API server, OpenClaw-compatible runtime, validator agents, and 0G integration
 - [contracts-0g](/Users/himanshu/Downloads/KYA/contracts-0g) — primary 0G Chain contracts used by the app
 - [contracts](/Users/himanshu/Downloads/KYA/contracts) — older contract set retained for reference
 - [hcs-relayer](/Users/himanshu/Downloads/KYA/hcs-relayer) — legacy relayer code retained from the earlier architecture
@@ -333,7 +334,7 @@ For HackQuest submission, prepare and attach:
 
 ## Positioning
 
-AgentTrust should be understood as:
+TrustLayer should be understood as:
 
 > A 0G-native hybrid verification and persistent memory infrastructure for autonomous AI agents.
 

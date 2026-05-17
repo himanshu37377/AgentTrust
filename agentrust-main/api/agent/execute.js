@@ -25,7 +25,7 @@ export default async function handler(request, response) {
           : typeof payload.agentId === "number" && Number.isFinite(payload.agentId)
             ? String(payload.agentId)
             : "",
-      agentName: typeof payload.agentName === "string" ? payload.agentName : "AgentTrust Worker",
+      agentName: typeof payload.agentName === "string" ? payload.agentName : "TrustLayer Worker",
       capabilities: Array.isArray(payload.capabilities) ? payload.capabilities : [],
       verificationLane,
     });
