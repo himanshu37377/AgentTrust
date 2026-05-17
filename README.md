@@ -6,233 +6,257 @@
 
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/himanshu37377/TrustLayer)
 
-TrustLayer is a 0G-native hybrid verification, persistent memory, and trust infrastructure for autonomous AI agents using OpenClaw orchestration, 0G Compute validator agents, 0G Storage memory, and 0G Chain settlement.
+TrustLayer is a 0G-native trust and verification layer for autonomous AI agents that combines persistent memory, validator-reviewed reasoning, and on-chain reputation updates.
 
-## One-Sentence Description
+## One-Line Problem Statement
 
-TrustLayer gives autonomous AI agents persistent decentralized memory, validator-reviewed reasoning, and an on-chain trust layer so users can inspect long-term behavioral history instead of trusting opaque one-off outputs.
+AI agents can produce useful outputs, but users still lack a durable way to verify what an agent did before, how it was reviewed, and whether its long-term behavior deserves trust.
 
-## Hackathon Track
+## What TrustLayer Builds
 
-- Track 1: Agentic Infrastructure & OpenClaw Lab
+TrustLayer turns each agent execution into a reviewable infrastructure flow instead of a one-off chat response:
 
-## Problem
+1. An agent receives a task.
+2. The task is routed into either a deterministic lane or a reasoning lane.
+3. Deterministic tasks are recomputed locally and checked against a canonical result.
+4. Reasoning-heavy tasks are reviewed by isolated validator agents through the 0G Compute path or a local fallback path.
+5. The execution envelope, validator output, provenance, and memory payload are persisted to 0G Storage.
+6. Trust-relevant execution activity is anchored to 0G Chain contracts for registration, validation, staking, and reputation updates.
+7. The frontend exposes agent profiles, execution history, validator activity, and memory inspection so a reviewer can see what happened end to end.
 
-Autonomous AI agents are becoming execution surfaces for analysis, planning, and task completion, but most agents still behave like disposable chat sessions:
+## Why This Matters
+
+Most agent products still behave like disposable sessions:
 
 - no persistent decentralized memory
-- no verifiable execution history
-- no reusable trust layer
-- no visible validator review for non-deterministic outputs
-- no durable reputation that compounds over time
+- no long-term behavioral history
+- no visible verification lane for non-deterministic outputs
+- no durable reputation signal
+- no review trail that can be inspected later by users, marketplaces, or infrastructure partners
 
-This makes it hard for users, integrators, and future agent marketplaces to answer a basic question:
+TrustLayer is an attempt to make agent trust state accumulative instead of ephemeral.
 
-Can this agent be trusted based on what it has actually done before?
+## 0G Stack Used
 
-## What TrustLayer Does
+TrustLayer uses the following 0G components directly:
 
-TrustLayer turns each agent action into a verifiable infrastructure flow:
+- `0G Storage`: execution envelopes, memory records, metadata payloads, validator-reviewed traces
+- `0G Compute`: reasoning-lane validator inference for non-deterministic agent outputs
+- `0G Chain`: agent registration, validation submission/finalization, staking, slashing, trust score updates
 
-1. An agent executes a task.
-2. OpenClaw routes the task into deterministic or non-deterministic verification.
-3. Deterministic tasks use canonical recomputation.
-4. Non-deterministic tasks use isolated validator agents running through 0G Compute.
-5. The execution envelope, validator results, and provenance data are stored in 0G Storage.
-6. The storage root and trust updates are anchored on 0G Chain.
-7. The frontend exposes trust score, memory logs, validator-agent activity, and issue escalation flows.
+Current submission note:
 
-## 📚 DeepWiki Documentation
+- Agentic memory and identity are represented through persistent 0G-stored metadata and execution history tied to registered agents.
+- There is no separate standalone "Agentic ID" module shipped as an independent contract in this repo.
 
-For deeper technical architecture, protocol flow, validator logic, and repository context, judges can explore the DeepWiki documentation:
+## Live Demo
 
-🔗 https://deepwiki.com/himanshu37377/TrustLayer
+- Live app: [https://trustlayer-app.vercel.app](https://trustlayer-app.vercel.app)
+- Deep technical documentation: [DeepWiki](https://deepwiki.com/himanshu37377/TrustLayer)
 
-## Why It Matters
+Reviewer note:
 
-TrustLayer is not just another AI app with a storage plugin. It is infrastructure for:
+- The live app is the best entry point for judging the product.
+- DeepWiki is documentation and architecture support material, not user traction.
 
-- autonomous AI agents
-- persistent decentralized memory
-- verifiable trust
-- agent reputation
-- long-context behavioral history
-- validator-reviewed reasoning
+## Judge Quickstart
 
-## 0G Technical Integration Proof
+If you only have a few minutes, use this order:
 
-This project uses three core 0G modules directly.
+1. Open the live app.
+2. Visit `/register` and inspect how an agent profile is created with wallet-bound metadata.
+3. Visit `/explore` and run or simulate an execution flow.
+4. For deterministic tasks, inspect canonical recomputation and commitment verification.
+5. For reasoning tasks, inspect validator-agent review and the verification outcome.
+6. Visit `/executions` to inspect the persistent history and memory trail.
+7. Visit `/validators` to inspect validator activity, review state, and escalation flow.
 
-### 1. 0G Storage
+## Architecture
 
-Used for:
+```mermaid
+flowchart TD
+  U["User / Judge"] --> FE["React Frontend"]
+  FE --> API["Vercel / Local API Layer"]
+  API --> OC["OpenClaw-Oriented Orchestration Runtime"]
+  OC --> RT["Task Router"]
+  RT -->|Deterministic| DP["Deterministic Verification Pipeline"]
+  RT -->|Reasoning| RP["Reasoning Verification Pipeline"]
+  RP --> V1["Validator Agent 1"]
+  RP --> V2["Validator Agent 2"]
+  V1 --> C["0G Compute"]
+  V2 --> C
+  DP --> ENV["Execution Envelope"]
+  C --> ENV
+  ENV --> S["0G Storage"]
+  ENV --> VR["ValidationRegistry"]
+  VR --> TM["TrustManager"]
+  TM --> AR["AgentRegistry"]
+  VR --> SM["StakingManager"]
+  S --> UI["Executions / Validators / Memory UI"]
+  TM --> UI
+  AR --> UI
+  SM --> UI
+```
 
-- wallet-bound agent metadata
-- execution envelopes
-- validator-agent review payloads
-- provenance-tagged memory
-- trust-related execution history
+## Verification Model
+
+### Deterministic Lane
+
+Used for prompts where TrustLayer can confidently canonicalize the task into an exact answer.
+
+Examples:
+
+- arithmetic
+- exact numeric expressions
+- simple deterministic transformations
+
+Flow:
+
+1. Classify the task as deterministic.
+2. Recompute the expected answer locally.
+3. Normalize the generated output.
+4. Compare the normalized result against the recomputed value.
+5. Build the execution commitment and settlement payload.
+
+### Reasoning Lane
+
+Used for prompts where exact recomputation is not the right trust model.
+
+Examples:
+
+- explanations
+- planning
+- summarization
+- recommendation-style prompts
+- reasoning-heavy analysis
+
+Flow:
+
+1. Classify the task as reasoning.
+2. Produce a generator response through OpenClaw-compatible or Gemini/local fallback logic.
+3. Send the result to isolated validator agents.
+4. Aggregate validator outcomes with minority-veto and review-required logic.
+5. Persist the memory envelope and expose the result to the frontend trust surface.
+
+## Validator Design
+
+Validator agents are part of the core product logic, not only a frontend simulation.
+
+Current validator roles:
+
+- `Validator Agent 1`: factual consistency, internal correctness, deterministic sanity
+- `Validator Agent 2`: reasoning coherence, hallucination detection, contextual relevance
 
 Relevant implementation:
 
-- [Agent Runtime](/Users/himanshu/Downloads/KYA/agentrust-main/api/_lib/agent.js)
-- [Memory Upload Route](/Users/himanshu/Downloads/KYA/agentrust-main/api/memory/upload.js)
-- [Memory Fetch Route](/Users/himanshu/Downloads/KYA/agentrust-main/api/memory/fetch.js)
+- [agentrust-main/api/_lib/validators/validator-1.js](/Users/himanshu/Downloads/KYA/agentrust-main/api/_lib/validators/validator-1.js)
+- [agentrust-main/api/_lib/validators/validator-2.js](/Users/himanshu/Downloads/KYA/agentrust-main/api/_lib/validators/validator-2.js)
+- [agentrust-main/api/_lib/openclaw/validators.js](/Users/himanshu/Downloads/KYA/agentrust-main/api/_lib/openclaw/validators.js)
+- [agentrust-main/api/_lib/compute/validatorInference.js](/Users/himanshu/Downloads/KYA/agentrust-main/api/_lib/compute/validatorInference.js)
 
-### 2. 0G Compute
+## 0G Integration Map
 
-Used for:
+### 0G Storage
 
-- live validator-agent inference for non-deterministic tasks
-- isolated validator reviews through the reasoning verification lane
+Purpose:
 
-Relevant implementation:
+- persist agent metadata
+- persist execution memory envelopes
+- store validator-reviewed execution context
+- allow the UI to reload memory by storage hash
 
-- [0G Compute Client](/Users/himanshu/Downloads/KYA/agentrust-main/api/_lib/compute/zerogCompute.js)
-- [Validator Inference Adapter](/Users/himanshu/Downloads/KYA/agentrust-main/api/_lib/compute/validatorInference.js)
-- [Validator Agent 1](/Users/himanshu/Downloads/KYA/agentrust-main/api/_lib/validators/validator-1.js)
-- [Validator Agent 2](/Users/himanshu/Downloads/KYA/agentrust-main/api/_lib/validators/validator-2.js)
+Implementation:
 
-### 3. 0G Chain
+- [agentrust-main/api/_lib/agent.js](/Users/himanshu/Downloads/KYA/agentrust-main/api/_lib/agent.js)
+- [agentrust-main/api/memory/upload.js](/Users/himanshu/Downloads/KYA/agentrust-main/api/memory/upload.js)
+- [agentrust-main/api/memory/fetch.js](/Users/himanshu/Downloads/KYA/agentrust-main/api/memory/fetch.js)
+- [agentrust-main/api/metadata/upload.js](/Users/himanshu/Downloads/KYA/agentrust-main/api/metadata/upload.js)
 
-Used for:
+### 0G Compute
 
-- agent registration
-- execution submission
-- trust anchoring
-- validator staking
-- validator slashing hooks
+Purpose:
 
-Relevant contracts:
+- run isolated validator reviews for reasoning-lane tasks
+- produce validator-level confidence, flags, and review reasons
+
+Implementation:
+
+- [agentrust-main/api/_lib/compute/zerogCompute.js](/Users/himanshu/Downloads/KYA/agentrust-main/api/_lib/compute/zerogCompute.js)
+- [agentrust-main/api/_lib/compute/validatorInference.js](/Users/himanshu/Downloads/KYA/agentrust-main/api/_lib/compute/validatorInference.js)
+
+### 0G Chain
+
+Purpose:
+
+- register agents
+- anchor execution and verification state
+- manage validator staking
+- manage trust score updates and slashing paths
+
+Contracts:
 
 - [contracts-0g/AgentRegistry.sol](/Users/himanshu/Downloads/KYA/contracts-0g/AgentRegistry.sol)
 - [contracts-0g/ValidationRegistry.sol](/Users/himanshu/Downloads/KYA/contracts-0g/ValidationRegistry.sol)
-- [contracts-0g/TrustManager.sol](/Users/himanshu/Downloads/KYA/contracts-0g/TrustManager.sol)
 - [contracts-0g/StakingManager.sol](/Users/himanshu/Downloads/KYA/contracts-0g/StakingManager.sol)
+- [contracts-0g/TrustManager.sol](/Users/himanshu/Downloads/KYA/contracts-0g/TrustManager.sol)
 
-## Deployed Contract Proof
+## Product Surface
 
-Current deployed addresses used by the app:
+Frontend routes:
+
+- `/register`: wallet-based agent registration and metadata upload
+- `/explore`: agent discovery and task composition
+- `/executions`: execution history, memory inspection, verification trail
+- `/validators`: validator activity, issue escalation, review state
+
+Relevant files:
+
+- [agentrust-main/src/pages/RegisterAgentPage.tsx](/Users/himanshu/Downloads/KYA/agentrust-main/src/pages/RegisterAgentPage.tsx)
+- [agentrust-main/src/pages/ExplorePage.tsx](/Users/himanshu/Downloads/KYA/agentrust-main/src/pages/ExplorePage.tsx)
+- [agentrust-main/src/pages/ExecutionsPage.tsx](/Users/himanshu/Downloads/KYA/agentrust-main/src/pages/ExecutionsPage.tsx)
+- [agentrust-main/src/pages/ValidatorsPage.tsx](/Users/himanshu/Downloads/KYA/agentrust-main/src/pages/ValidatorsPage.tsx)
+
+Server/API routes:
+
+- `POST /api/agent/execute`
+- `POST /api/memory/upload`
+- `POST /api/memory/log`
+- `GET /api/memory/history`
+- `GET /api/memory/fetch`
+- `POST /api/metadata/upload`
+
+## Contract Addresses
+
+### Mainnet
+
+- No 0G mainnet contracts are deployed for this submission yet.
+
+### Current network used by the app
+
+- Network: `0G Galileo Testnet`
+- RPC: `https://evmrpc-testnet.0g.ai`
+- Explorer: [https://chainscan-galileo.0g.ai](https://chainscan-galileo.0g.ai)
+
+### Testnet contracts currently wired into the app
 
 - AgentRegistry: [`0xfcBc817A4b493D9bd169199Da5e7CB8cBecc667F`](https://chainscan-galileo.0g.ai/address/0xfcBc817A4b493D9bd169199Da5e7CB8cBecc667F)
 - ValidationRegistry: [`0xE75230ED77A6D84C05066439489e74C9182823e7`](https://chainscan-galileo.0g.ai/address/0xE75230ED77A6D84C05066439489e74C9182823e7)
 - StakingManager: [`0x0da8DFbAFd7C2cA63c120cF7d2a60cA1119B0421`](https://chainscan-galileo.0g.ai/address/0x0da8DFbAFd7C2cA63c120cF7d2a60cA1119B0421)
 - TrustManager: [`0x611a8c1C65f9Da0553468B9369D2dA1F2BFf7F0b`](https://chainscan-galileo.0g.ai/address/0x611a8c1C65f9Da0553468B9369D2dA1F2BFf7F0b)
 
-Current app network:
+Reviewer note:
 
-- 0G Galileo Testnet
-- RPC: `https://evmrpc-testnet.0g.ai`
-- Explorer: [chainscan-galileo.0g.ai](https://chainscan-galileo.0g.ai)
-- Live frontend demo: [https://trustlayer-app.vercel.app](https://trustlayer-app.vercel.app)
+- The live demo and current repo wiring target Galileo testnet.
+- If the final submission form requires mainnet addresses specifically, this section should be updated after mainnet deployment.
 
-Important reviewer note:
+## Setup And Run
 
-- The repository currently documents the deployed Galileo testnet contracts used during hackathon development.
-- If the final HackQuest submission form strictly requires a 0G mainnet contract address, replace this section with the final mainnet deployment before submitting.
+### Prerequisites
 
-## System Architecture
-
-```mermaid
-flowchart TD
-  U["User"] --> FE["React Frontend"]
-  FE --> OC["OpenClaw Orchestration Layer"]
-  OC --> TC["Task Classification Hook"]
-  TC -->|Deterministic| DP["Deterministic Verification Pipeline"]
-  TC -->|Non-deterministic| RP["Reasoning Pipeline"]
-  RP --> V1["Validator Agent 1 via 0G Compute"]
-  RP --> V2["Validator Agent 2 via 0G Compute"]
-  DP --> VE["Execution Envelope"]
-  V1 --> VE
-  V2 --> VE
-  VE --> S["0G Storage"]
-  VE --> VC["ValidationRegistry"]
-  VC --> TM["TrustManager"]
-  TM --> AR["AgentRegistry / StakingManager"]
-  S --> UI["Memory Viewer + Validator Agent Activity + Trust UI"]
-  TM --> UI
-  AR --> UI
-```
-
-## Verification Model
-
-### Deterministic Tasks
-
-Examples:
-
-- arithmetic
-- exact calculator operations
-- canonical deterministic transformations
-
-Flow:
-
-- generator output
-- normalization
-- deterministic recomputation
-- commitment verification
-- on-chain execution settlement
-
-### Non-Deterministic Tasks
-
-Examples:
-
-- explanations
-- summarization
-- planning
-- reasoning-heavy analysis
-
-Flow:
-
-- generator output
-- isolated validator-agent execution
-- minority-veto / review-required logic
-- 0G Storage memory persistence
-- 0G Chain anchoring
-
-## Validator Agents
-
-Validator agents are a core feature of the project, not a mock UI concept.
-
-Current validator roles:
-
-- Validator Agent 1: factual consistency, deterministic sanity, internal correctness
-- Validator Agent 2: reasoning coherence, hallucination detection, contextual relevance
-
-Relevant files:
-
-- [Validator Agent 1](/Users/himanshu/Downloads/KYA/agentrust-main/api/_lib/validators/validator-1.js)
-- [Validator Agent 2](/Users/himanshu/Downloads/KYA/agentrust-main/api/_lib/validators/validator-2.js)
-- [Validator Registry](/Users/himanshu/Downloads/KYA/agentrust-main/api/_lib/validators/index.js)
-
-## Frontend Pages
-
-- `/register` — wallet-based agent registration and 0G metadata upload
-- `/explore` — agent discovery and task composition
-- `/executions` — execution history, memory, and verification trail
-- `/validators` — validator-agent activity, issue escalation, human review votes
-
-Relevant app files:
-
-- [Register Page](/Users/himanshu/Downloads/KYA/agentrust-main/src/pages/RegisterAgentPage.tsx)
-- [Explore Page](/Users/himanshu/Downloads/KYA/agentrust-main/src/pages/ExplorePage.tsx)
-- [Executions Page](/Users/himanshu/Downloads/KYA/agentrust-main/src/pages/ExecutionsPage.tsx)
-- [Validators Page](/Users/himanshu/Downloads/KYA/agentrust-main/src/pages/ValidatorsPage.tsx)
-
-## Demo Flow
-
-Recommended judge demo:
-
-1. Register `Math Agent ND` or another agent profile on `/register`.
-2. Generate and upload wallet-bound metadata to 0G Storage.
-3. Compose a task from `/explore`.
-4. For deterministic tasks, show recomputation and commitment verification.
-5. For non-deterministic tasks, show validator-agent reviews and 0G Compute-backed reasoning verification.
-6. Show the 0G Storage root and memory log entry.
-7. Show the on-chain execution / trust transaction on the 0G explorer.
-8. Open `/validators` and show Validator Agent Activity plus issue escalation.
-9. Open `/executions` to show persistent history reload.
-
-## Local Reproduction
+- Node.js 20+
+- npm
+- Foundry
+- MetaMask or another injected EVM wallet for frontend interaction
 
 ### 1. Install dependencies
 
@@ -245,38 +269,40 @@ forge build
 
 ### 2. Configure environment
 
-Create a local env file from:
+Create a local env file using [agentrust-main/.env.example](/Users/himanshu/Downloads/KYA/agentrust-main/.env.example).
 
-- [Frontend Env Example](/Users/himanshu/Downloads/KYA/agentrust-main/.env.example)
-
-Minimum frontend / chain variables:
+Minimum frontend and chain variables:
 
 - `VITE_ZEROG_RPC_URL`
 - `VITE_ZEROG_CHAIN_ID`
+- `VITE_ZEROG_NETWORK_NAME`
+- `VITE_ZEROG_BLOCK_EXPLORER_URL`
 - `VITE_AGENT_REGISTRY_ADDRESS`
 - `VITE_VALIDATION_REGISTRY_ADDRESS`
 - `VITE_STAKING_MANAGER_ADDRESS`
 - `VITE_TRUST_MANAGER_ADDRESS`
 
-Minimum 0G Storage variables:
+Minimum 0G Storage variables for live uploads:
 
 - `ZEROG_EVM_RPC`
 - `ZEROG_INDEXER_RPC`
 - `ZEROG_PRIVATE_KEY`
 
-Minimum 0G Compute variables:
+Optional 0G Compute variables for live validator inference:
 
 - `ZEROG_COMPUTE_API_KEY`
 - `ZEROG_COMPUTE_BASE_URL`
 - `ZEROG_COMPUTE_MODEL`
 
-Optional OpenClaw / Gemini variables:
+Optional generator/runtime variables:
 
 - `OPENCLAW_RUNTIME_ENABLED`
 - `OPENCLAW_PROFILE`
+- `OPENCLAW_GENERATOR_MODEL`
+- `OPENCLAW_VALIDATOR_MODEL`
 - `GEMINI_API_KEY`
 
-### 3. Run the app
+### 3. Start the app
 
 ```bash
 cd agentrust-main
@@ -287,57 +313,77 @@ npm run dev
 ### 4. Run contract tests
 
 ```bash
-cd ..
 forge test --offline
 ```
 
-### 5. Run validator-agent smoke test
+### 5. Run frontend tests
+
+```bash
+cd agentrust-main
+npm test
+```
+
+### 6. Run validator smoke test
 
 ```bash
 cd agentrust-main
 npm run test:validators
 ```
 
-## Reviewer Notes
+## Local Review Notes
 
 - The local API server runs on `http://localhost:3001`.
-- The Vite frontend proxies `/api/*` and `/metadata/upload` to the local API server.
-- Non-deterministic tasks require 0G Compute credentials for validator-agent execution.
-- 0G Storage uploads require uploader credentials to produce live storage roots.
-- MetaMask should be connected to 0G Galileo Testnet for local review.
+- The frontend proxies `/api/*` and `/metadata/upload` during local development.
+- If 0G Storage credentials are missing, the app can still operate in a deterministic demo mode for memory flows.
+- If `ZEROG_COMPUTE_API_KEY` is missing, the reasoning validator path now falls back instead of hard-failing.
+- For live wallet actions, connect MetaMask to 0G Galileo Testnet.
 
-## Test / Validation Status
+## Validation Status
 
-Verified in this repo:
+Verified in this repository:
 
 - `forge test --offline`
+- `npm test`
 - `npm run build`
-- `npm run test:validators` when the environment has working network access to the 0G Compute router
+- `npm run lint` with warnings only
 
 ## Repository Structure
 
-- [Frontend App Directory](/Users/himanshu/Downloads/KYA/agentrust-main) — frontend, local API server, OpenClaw-compatible runtime, validator agents, and 0G integration
-- [contracts-0g](/Users/himanshu/Downloads/KYA/contracts-0g) — primary 0G Chain contracts used by the app
-- [contracts](/Users/himanshu/Downloads/KYA/contracts) — older contract set retained for reference
-- [hcs-relayer](/Users/himanshu/Downloads/KYA/hcs-relayer) — legacy relayer code retained from the earlier architecture
+- [agentrust-main](/Users/himanshu/Downloads/KYA/agentrust-main): frontend, API routes, runtime orchestration, validator logic, 0G integration
+- [contracts-0g](/Users/himanshu/Downloads/KYA/contracts-0g): primary 0G Chain contracts used by the app
+- [contracts](/Users/himanshu/Downloads/KYA/contracts): earlier contract set retained for reference
+- [hcs-relayer](/Users/himanshu/Downloads/KYA/hcs-relayer): legacy relayer code from an earlier architecture iteration
 
-## Submission Checklist
+## Traction
 
-For HackQuest submission, prepare and attach:
+TrustLayer does not currently claim meaningful early user traction.
 
-- GitHub repository link
-- deployed contract address section from this README
-- explorer links showing on-chain activity
-- 3-minute demo video link
-- public X post with `#0GHackathon` and `#BuildOn0G`
-- optional frontend demo link / slides
+Current honest status:
 
-## Positioning
+- no reported production user base yet
+- no public usage metrics being claimed in this README
+- no repeat-user or retention metrics being claimed
+- no testimonials or design-partner quotes included yet
 
-TrustLayer should be understood as:
+Important note:
 
-> A 0G-native hybrid verification and persistent memory infrastructure for autonomous AI agents.
+- The DeepWiki page is technical documentation for judges and contributors.
+- It should not be interpreted as product traction, active users, or external adoption.
 
-Not as:
+## Suggested Evaluation Lens
 
-> A generic AI app with storage added afterward.
+TrustLayer should be evaluated as infrastructure for agent trust, not only as a single demo app.
+
+What is novel here:
+
+- the split between deterministic and reasoning verification lanes
+- validator-reviewed non-deterministic outputs instead of naive single-model trust
+- persistent execution memory on 0G Storage
+- trust state tied back to on-chain validation and staking primitives
+- a frontend that exposes the trust surface instead of hiding it behind backend-only logic
+
+## DeepWiki
+
+For a deeper codebase walkthrough, architecture map, and repository context:
+
+- [https://deepwiki.com/himanshu37377/TrustLayer](https://deepwiki.com/himanshu37377/TrustLayer)
