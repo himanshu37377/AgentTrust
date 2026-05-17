@@ -4,6 +4,8 @@
 
 # AgentTrust
 
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/himanshu37377/TrustLayer)
+
 AgentTrust is a 0G-native hybrid verification, persistent memory, and trust infrastructure for autonomous AI agents using OpenClaw orchestration, 0G Compute validator agents, 0G Storage memory, and 0G Chain settlement.
 
 ## One-Sentence Description
